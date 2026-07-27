@@ -17,7 +17,19 @@
 ]]
 
 -- Nạp config & thư viện tiện ích ------------------------------------------
-local dir = (type(rootDir) == "function") and rootDir() or "."
+-- Tự tìm thư mục script để require chạy được trên cả XXTouch lẫn AutoTouch.
+local function scriptDir()
+  if type(rootDir) == "function" then return rootDir() end   -- AutoTouch
+  local info = (type(debug) == "table" and debug.getinfo)
+    and debug.getinfo(1, "S") or nil
+  if info and info.source then
+    local src = info.source:gsub("^@", "")
+    local d = src:match("^(.*)[/\\][^/\\]+$")
+    if d and #d > 0 then return d end
+  end
+  return "."
+end
+local dir = scriptDir()
 package.path = dir .. "/?.lua;" .. dir .. "/lib/?.lua;" .. package.path
 
 local Config = require("config")

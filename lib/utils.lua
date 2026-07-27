@@ -1,36 +1,126 @@
 --[[
-  lib/utils.lua — Các hàm tiện ích dùng chung cho script AutoTouch
-  Bao bọc (wrap) các API AutoTouch để tap/swipe/đọc màu ổn định hơn,
-  đồng thời tự động scale toạ độ theo độ phân giải thực tế của máy.
+  lib/utils.lua — Các hàm tiện ích dùng chung cho script tự động hoá.
+
+  Tự động nhận diện môi trường và dùng đúng API:
+    - XXTouch / XXTouch Elite : touch.on/move/off, screen.get_color, sys.msleep...
+    - AutoTouch               : touchDown/Move/Up, getColor, usleep...
+
+  Nhờ vậy `fishing.lua`, `config.lua`, `calibrate.lua` KHÔNG cần sửa khi
+  chuyển giữa hai ứng dụng. Toạ độ trong config canh theo 1080x1920 và được
+  tự scale theo độ phân giải máy thực tế.
 ]]
 
 local Utils = {}
 
--- ----- Log & thông báo -----------------------------------------------------
+-- ==========================================================================
+-- LỚP NỀN (BACKEND) — bọc API của XXTouch / AutoTouch về một giao diện chung
+-- ==========================================================================
+local BE = {}
 
+local hasXXTouch  = (type(touch) == "table" and type(touch.on) == "function")
+local hasAutoTouch = (type(touchDown) == "function")
+
+if hasXXTouch then
+  BE.name = "XXTouch"
+elseif hasAutoTouch then
+  BE.name = "AutoTouch"
+else
+  BE.name = "unknown"
+end
+
+-- ----- Chạm: down / move / up (một ngón, đủ cho câu cá) --------------------
+if hasXXTouch then
+  BE.down = function(x, y) touch.on(x, y) end
+  BE.move = function(x, y) touch.move(x, y) end
+  BE.up   = function(x, y) touch.off(x, y) end
+elseif hasAutoTouch then
+  local FID = 1
+  BE.down = function(x, y) touchDown(FID, x, y) end
+  BE.move = function(x, y) touchMove(FID, x, y) end
+  BE.up   = function(x, y) touchUp(FID, x, y) end
+else
+  BE.down = function() end
+  BE.move = function() end
+  BE.up   = function() end
+end
+
+-- ----- Nghỉ theo mili-giây -------------------------------------------------
+if type(sys) == "table" and type(sys.msleep) == "function" then
+  BE.sleep = function(ms) sys.msleep(math.floor(ms)) end        -- XXTouch
+elseif type(mSleep) == "function" then
+  BE.sleep = function(ms) mSleep(math.floor(ms)) end            -- biến thể TS
+elseif type(usleep) == "function" then
+  BE.sleep = function(ms) usleep(math.floor(ms * 1000)) end     -- AutoTouch
+else
+  BE.sleep = function(ms)                                       -- fallback bận
+    local target = (os.clock and os.clock() or 0) + ms / 1000
+    while os.clock and os.clock() < target do end
+  end
+end
+
+-- ----- Đọc màu tại (x, y) → trả về số nguyên 0xRRGGBB ----------------------
+if type(screen) == "table" and type(screen.get_color) == "function" then
+  BE.getColor = function(x, y)                                  -- XXTouch
+    local a, b, c = screen.get_color(x, y)
+    if b ~= nil and c ~= nil then
+      return a * 0x10000 + b * 0x100 + c   -- một số bản trả về r,g,b riêng
+    end
+    return a                                -- bản khác trả về sẵn 0xRRGGBB
+  end
+elseif type(getColor) == "function" then
+  BE.getColor = function(x, y) return getColor(x, y) end        -- AutoTouch
+else
+  BE.getColor = function() return nil end
+end
+
+-- ----- Kích thước màn hình -------------------------------------------------
+if type(screen) == "table" and type(screen.size) == "function" then
+  BE.screenSize = function() return screen.size() end           -- XXTouch
+elseif type(getScreenResolution) == "function" then
+  BE.screenSize = function() return getScreenResolution() end   -- AutoTouch
+else
+  BE.screenSize = function() return nil, nil end
+end
+
+-- ----- Thông báo & log -----------------------------------------------------
+BE.toast = function(msg)
+  if type(sys) == "table" and type(sys.toast) == "function" then
+    sys.toast(msg)                                              -- XXTouch
+  elseif type(toast) == "function" then
+    toast(msg)                                                  -- AutoTouch
+  end
+end
+
+BE.log = function(msg)
+  if type(nLog) == "function" then nLog(msg)                    -- XXTouch
+  elseif type(sys) == "table" and type(sys.log) == "function" then sys.log(msg)
+  elseif type(log) == "function" then log(msg)                  -- AutoTouch
+  elseif type(print) == "function" then print(msg) end
+end
+
+Utils.backendName = BE.name
+
+-- ==========================================================================
+-- LOG & THÔNG BÁO
+-- ==========================================================================
 Utils.verbose = false
 
 function Utils.logMsg(msg)
-  if Utils.verbose and type(log) == "function" then
-    log("[AceFishing] " .. tostring(msg))
-  end
+  if Utils.verbose then BE.log("[Bot] " .. tostring(msg)) end
 end
 
 function Utils.notify(msg)
-  if type(toast) == "function" then
-    toast(tostring(msg))
-  end
+  BE.toast(tostring(msg))
   Utils.logMsg(msg)
 end
 
--- ----- Thời gian -----------------------------------------------------------
-
--- Nghỉ theo mili-giây (AutoTouch usleep tính bằng micro-giây)
+-- ==========================================================================
+-- THỜI GIAN
+-- ==========================================================================
 function Utils.sleepMs(ms)
-  usleep(math.floor(ms * 1000))
+  BE.sleep(ms)
 end
 
--- Trả về mốc thời gian hiện tại (mili-giây) nếu môi trường hỗ trợ.
 function Utils.nowMs()
   if type(os) == "table" and type(os.clock) == "function" then
     return os.clock() * 1000
@@ -38,26 +128,24 @@ function Utils.nowMs()
   return 0
 end
 
--- ----- Scale toạ độ theo độ phân giải ---------------------------------------
-
--- baseW/baseH: độ phân giải mà toạ độ trong config được canh theo.
--- Utils.setScale sẽ tính hệ số scale dựa trên màn hình thực tế.
+-- ==========================================================================
+-- SCALE TOẠ ĐỘ THEO ĐỘ PHÂN GIẢI
+-- ==========================================================================
 Utils.scaleX = 1.0
 Utils.scaleY = 1.0
 
 function Utils.setScale(baseW, baseH)
   local w, h = baseW, baseH
-  if type(getScreenResolution) == "function" then
-    local rw, rh = getScreenResolution()
-    if rw and rh and rw > 0 and rh > 0 then
-      -- Canh theo hướng portrait: cạnh ngắn = width
-      w = math.min(rw, rh)
-      h = math.max(rw, rh)
-    end
+  local rw, rh = BE.screenSize()
+  if rw and rh and rw > 0 and rh > 0 then
+    -- Canh theo hướng portrait: cạnh ngắn = width
+    w = math.min(rw, rh)
+    h = math.max(rw, rh)
   end
   Utils.scaleX = w / baseW
   Utils.scaleY = h / baseH
-  Utils.logMsg(string.format("Scale = (%.3f, %.3f)", Utils.scaleX, Utils.scaleY))
+  Utils.logMsg(string.format("Backend=%s  Scale=(%.3f, %.3f)",
+    BE.name, Utils.scaleX, Utils.scaleY))
 end
 
 local function sx(x) return math.floor(x * Utils.scaleX + 0.5) end
@@ -65,21 +153,17 @@ local function sy(y) return math.floor(y * Utils.scaleY + 0.5) end
 Utils.sx = sx
 Utils.sy = sy
 
--- ----- Tap / Swipe ----------------------------------------------------------
-
-local FINGER_TAP   = 3
-local FINGER_SWIPE = 5
-
--- Một lần chạm dứt khoát tại (x, y)
+-- ==========================================================================
+-- TAP / SWIPE
+-- ==========================================================================
 function Utils.tap(x, y, holdMs)
   holdMs = holdMs or 30
   local px, py = sx(x), sy(y)
-  touchDown(FINGER_TAP, px, py)
+  BE.down(px, py)
   Utils.sleepMs(holdMs)
-  touchUp(FINGER_TAP, px, py)
+  BE.up(px, py)
 end
 
--- Tap nhiều lần với khoảng nghỉ giữa các lần
 function Utils.tapN(x, y, times, intervalMs, holdMs)
   times = times or 1
   intervalMs = intervalMs or 60
@@ -89,7 +173,6 @@ function Utils.tapN(x, y, times, intervalMs, holdMs)
   end
 end
 
--- Vuốt mượt từ (x1,y1) tới (x2,y2) trong durationMs
 function Utils.swipe(x1, y1, x2, y2, durationMs, steps)
   steps = steps or 12
   durationMs = durationMs or 200
@@ -97,21 +180,21 @@ function Utils.swipe(x1, y1, x2, y2, durationMs, steps)
   local ax2, ay2 = sx(x2), sy(y2)
   local stepSleep = durationMs / steps
 
-  touchDown(FINGER_SWIPE, ax1, ay1)
+  BE.down(ax1, ay1)
   Utils.sleepMs(stepSleep)
   for i = 1, steps do
     local t = i / steps
     local mx = math.floor(ax1 + (ax2 - ax1) * t + 0.5)
     local my = math.floor(ay1 + (ay2 - ay1) * t + 0.5)
-    touchMove(FINGER_SWIPE, mx, my)
+    BE.move(mx, my)
     Utils.sleepMs(stepSleep)
   end
-  touchUp(FINGER_SWIPE, ax2, ay2)
+  BE.up(ax2, ay2)
 end
 
--- ----- Đọc & so khớp màu ----------------------------------------------------
-
--- Tách 1 màu 0xRRGGBB thành 3 kênh
+-- ==========================================================================
+-- ĐỌC & SO KHỚP MÀU
+-- ==========================================================================
 local function rgb(color)
   local r = math.floor(color / 0x10000) % 0x100
   local g = math.floor(color / 0x100) % 0x100
@@ -119,13 +202,10 @@ local function rgb(color)
   return r, g, b
 end
 
--- Đọc màu tại (x, y) theo toạ độ ĐÃ scale
 function Utils.getColorAt(x, y)
-  if type(getColor) ~= "function" then return nil end
-  return getColor(sx(x), sy(y))
+  return BE.getColor(sx(x), sy(y))
 end
 
--- So khớp hai màu với sai số tolerance (khoảng cách từng kênh)
 function Utils.colorMatch(c1, c2, tolerance)
   if not c1 or not c2 then return false end
   tolerance = tolerance or 20
@@ -136,14 +216,12 @@ function Utils.colorMatch(c1, c2, tolerance)
      and math.abs(b1 - b2) <= tolerance
 end
 
--- Kiểm tra một anchor {x, y, color, tolerance} có khớp trạng thái không
 function Utils.anchorActive(anchor)
   if not anchor then return false end
   local c = Utils.getColorAt(anchor.x, anchor.y)
   return Utils.colorMatch(c, anchor.color, anchor.tolerance)
 end
 
--- Chờ tới khi anchor khớp (hoặc hết timeout). Trả về true nếu khớp.
 function Utils.waitForAnchor(anchor, timeoutMs, pollMs)
   timeoutMs = timeoutMs or 5000
   pollMs = pollMs or 50

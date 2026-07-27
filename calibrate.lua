@@ -11,7 +11,19 @@
   vào đúng nút, xem toạ độ trong file ghi lại, rồi điền vào config.lua.
 ]]
 
-local dir = (type(rootDir) == "function") and rootDir() or "."
+-- Tự tìm thư mục script để require chạy được trên cả XXTouch lẫn AutoTouch.
+local function scriptDir()
+  if type(rootDir) == "function" then return rootDir() end   -- AutoTouch
+  local info = (type(debug) == "table" and debug.getinfo)
+    and debug.getinfo(1, "S") or nil
+  if info and info.source then
+    local src = info.source:gsub("^@", "")
+    local d = src:match("^(.*)[/\\][^/\\]+$")
+    if d and #d > 0 then return d end
+  end
+  return "."
+end
+local dir = scriptDir()
 package.path = dir .. "/?.lua;" .. dir .. "/lib/?.lua;" .. package.path
 
 local Config = require("config")
@@ -26,7 +38,8 @@ local function hex(c)
 end
 
 local function line(s)
-  if type(log) == "function" then log(s) end
+  if type(nLog) == "function" then nLog(s)            -- XXTouch
+  elseif type(log) == "function" then log(s) end      -- AutoTouch
   if type(print) == "function" then print(s) end
 end
 
