@@ -11,8 +11,23 @@
   vào đúng nút, xem toạ độ trong file ghi lại, rồi điền vào config.lua.
 ]]
 
-local dir = (type(rootDir) == "function") and rootDir() or "."
-package.path = dir .. "/?.lua;" .. dir .. "/lib/?.lua;" .. package.path
+-- Thêm nhiều thư mục ứng viên vào package.path để require chạy được dù đặt
+-- file ở gốc Scripts hay clone nguyên repo vào subfolder (AutoTouch/XXTouch).
+local function addPaths(d)
+  if d and #d > 0 then
+    package.path = d .. "/?.lua;" .. d .. "/lib/?.lua;" .. package.path
+  end
+end
+local info = (type(debug) == "table" and debug.getinfo)
+  and debug.getinfo(1, "S") or nil
+if info and info.source then
+  addPaths(info.source:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$"))
+end
+if type(rootDir) == "function" then
+  addPaths(rootDir())
+  addPaths(rootDir() .. "/PowTouch")
+end
+addPaths(".")
 
 local Config = require("config")
 local Utils  = require("lib.utils")
@@ -26,7 +41,8 @@ local function hex(c)
 end
 
 local function line(s)
-  if type(log) == "function" then log(s) end
+  if type(nLog) == "function" then nLog(s)            -- XXTouch
+  elseif type(log) == "function" then log(s) end      -- AutoTouch
   if type(print) == "function" then print(s) end
 end
 

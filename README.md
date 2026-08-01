@@ -1,8 +1,10 @@
-# PowTouch — Ace Fishing bot (AutoTouch / iOS)
+# PowTouch — Ace Fishing bot (XXTouch Elite / AutoTouch, iOS)
 
-Script tự động **câu cá** cho game **Ace Fishing** chạy trên **AutoTouch** (iOS,
-máy đã **jailbreak**). Được canh sẵn cho **iPhone 7 Plus** (1080 × 1920), tự
-scale toạ độ nếu chạy trên máy có độ phân giải khác.
+Script tự động **câu cá** cho game **Ace Fishing** trên iOS (máy đã **jailbreak**).
+Chạy được trên **XXTouch Elite** (miễn phí) và **AutoTouch** — `lib/utils.lua`
+tự nhận diện ứng dụng đang chạy và dùng đúng API, nên các file còn lại không cần
+sửa. Được canh sẵn cho **iPhone 7 Plus** (1080 × 1920, iOS 15.8.8), tự scale toạ
+độ nếu chạy trên máy có độ phân giải khác.
 
 > Đây là phần **câu cá** — bước đầu tiên của dự án. Các phần khác (auto vào
 > phòng, chọn mồi, chọn cần, farm sự kiện…) sẽ bổ sung sau.
@@ -26,31 +28,38 @@ Máy trạng thái (state machine) lặp lại các bước:
 |------|---------|
 | `fishing.lua` | Script chính — chạy vòng lặp câu cá. |
 | `config.lua` | Toạ độ nút, màu nhận diện trạng thái, thời gian. **Cần hiệu chỉnh.** |
-| `lib/utils.lua` | Hàm tiện ích: tap, swipe, đọc/so màu, scale toạ độ. |
+| `lib/utils.lua` | Lớp tương thích: tự nhận diện XXTouch/AutoTouch + tap, swipe, đọc/so màu, scale toạ độ. |
 | `calibrate.lua` | In màu & toạ độ hiện tại để bạn hiệu chỉnh `config.lua`. |
 
 ## Cài đặt
 
-1. Copy toàn bộ thư mục này vào thư mục scripts của AutoTouch trên máy.
-2. Mở game Ace Fishing, vào màn hình câu cá.
+**XXTouch Elite:**
+1. Copy cả thư mục vào `/var/mobile/Library/XXTouch/scripts/` (dùng web editor
+   của XXTouch qua Wi-Fi, hoặc Filza). Giữ nguyên thư mục `lib/` cạnh `fishing.lua`.
+2. Mở XXTouch Elite → chọn `fishing.lua` → **Play**.
+
+**AutoTouch:** copy vào thư mục Scripts của AutoTouch rồi chạy `fishing.lua`.
+
+Sau đó mở game Ace Fishing, vào màn hình câu cá.
 
 ## Hiệu chỉnh (bắt buộc trước khi dùng)
 
 Toạ độ và màu trong `config.lua` chỉ là **giá trị mẫu**. Cách chỉnh:
 
-1. Mở đúng màn hình game rồi chạy `calibrate.lua`. Xem console AutoTouch để
-   lấy **màu thực** tại từng điểm neo.
+1. Mở đúng màn hình game rồi chạy `calibrate.lua`. Xem console/log của ứng dụng
+   để lấy **màu thực** tại từng điểm neo.
 2. Dán màu thực vào `Config.anchors.*.color`, chỉnh `tolerance` (20–40).
-3. Dùng chức năng **Record** của AutoTouch để lấy toạ độ chính xác các nút
-   (start, tension, giật cần, vùng vuốt nội lực…) rồi điền vào `Config.coords`.
+3. Lấy toạ độ chính xác các nút (start, tension, giật cần, vùng vuốt nội lực…)
+   bằng công cụ chọn điểm của XXTouch (bảng toạ độ khi chạm) hoặc **Record** của
+   AutoTouch, rồi điền vào `Config.coords`.
 
 Nếu chưa muốn dùng nhận diện màu, đặt `Config.features.useColorDetection = false`
 để chạy hoàn toàn theo thời gian (kém chính xác hơn, cần chỉnh timing).
 
 ## Chạy
 
-Chạy `fishing.lua` trong AutoTouch. Dừng bằng nút stop của AutoTouch, hoặc đặt
-`Config.maxCatches` > 0 để tự dừng sau số cá nhất định.
+Chạy `fishing.lua` (nút Play trong XXTouch/AutoTouch). Dừng bằng nút Stop, hoặc
+đặt `Config.maxCatches` > 0 để tự dừng sau số cá nhất định.
 
 ## Tuỳ chỉnh nhanh (`config.lua`)
 
@@ -62,5 +71,7 @@ Chạy `fishing.lua` trong AutoTouch. Dừng bằng nút stop của AutoTouch, h
 ## Ghi chú
 
 - Chỉ dùng cho mục đích học tập/tự động hoá cá nhân trên máy của bạn.
-- Cần AutoTouch bản có các API `touchDown/touchMove/touchUp`, `usleep`,
-  `getColor`, `getScreenResolution` (đa số bản đều có).
+- XXTouch Elite dùng các API `touch.on/move/off`, `screen.get_color`,
+  `screen.size`, `sys.msleep`, `sys.toast`; AutoTouch dùng
+  `touchDown/Move/Up`, `getColor`, `getScreenResolution`, `usleep`, `toast`.
+  `lib/utils.lua` tự chọn đúng bộ API — bạn không cần sửa gì thêm.
