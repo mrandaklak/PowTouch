@@ -11,20 +11,23 @@
   vào đúng nút, xem toạ độ trong file ghi lại, rồi điền vào config.lua.
 ]]
 
--- Tự tìm thư mục script để require chạy được trên cả XXTouch lẫn AutoTouch.
-local function scriptDir()
-  if type(rootDir) == "function" then return rootDir() end   -- AutoTouch
-  local info = (type(debug) == "table" and debug.getinfo)
-    and debug.getinfo(1, "S") or nil
-  if info and info.source then
-    local src = info.source:gsub("^@", "")
-    local d = src:match("^(.*)[/\\][^/\\]+$")
-    if d and #d > 0 then return d end
+-- Thêm nhiều thư mục ứng viên vào package.path để require chạy được dù đặt
+-- file ở gốc Scripts hay clone nguyên repo vào subfolder (AutoTouch/XXTouch).
+local function addPaths(d)
+  if d and #d > 0 then
+    package.path = d .. "/?.lua;" .. d .. "/lib/?.lua;" .. package.path
   end
-  return "."
 end
-local dir = scriptDir()
-package.path = dir .. "/?.lua;" .. dir .. "/lib/?.lua;" .. package.path
+local info = (type(debug) == "table" and debug.getinfo)
+  and debug.getinfo(1, "S") or nil
+if info and info.source then
+  addPaths(info.source:gsub("^@", ""):match("^(.*)[/\\][^/\\]+$"))
+end
+if type(rootDir) == "function" then
+  addPaths(rootDir())
+  addPaths(rootDir() .. "/PowTouch")
+end
+addPaths(".")
 
 local Config = require("config")
 local Utils  = require("lib.utils")
