@@ -110,40 +110,59 @@ local function fightFish()
   Utils.notify("Bắt đầu kéo cá!")
   local elapsed = 0
   local pollMs  = T.tensionTapIntervalMs
+  local holding = false   -- đang nhấn giữ nút tension hay không (chế độ "hold")
+
+  -- Đảm bảo nhả tay nếu đang giữ (trước khi vuốt/kết thúc để không kẹt ngón).
+  local function ensureRelease()
+    if holding then
+      Utils.release(C.tensionButton.x, C.tensionButton.y)
+      holding = false
+    end
+  end
 
   while elapsed < T.fightTimeoutMs do
-    -- (a) Nếu dây quá căng (vùng nguy hiểm) → NGỪNG nhấp để tránh đứt dây
-    local danger = F.useColorDetection and Utils.anchorActive(A.tensionDanger)
-
-    if danger then
-      -- Nhả tay, chờ lực căng giảm bớt
-      Utils.logMsg("Dây quá căng — tạm ngừng nhấp tension.")
-      Utils.sleepMs(pollMs)
-    else
-      -- (b) NHẤP TENSION để duy trì lực căng dây
-      Utils.tap(C.tensionButton.x, C.tensionButton.y, T.tapDownMs)
+    -- (a) Kiểm tra đã câu xong chưa (hiện màn phần thưởng / hết nút tension)
+    if F.useColorDetection then
+      local rewardUp   = Utils.anchorActive(A.rewardScreen)
+      local stillFight = Utils.anchorActive(A.fishHooked)
+      if rewardUp or (not stillFight) then
+        ensureRelease()
+        Utils.notify("Đã kéo cá xong.")
+        return STATE.FINISH
+      end
     end
 
-    -- (c) Nếu thanh NỘI LỰC đầy → VUỐT dùng kỹ năng nội lực
+    -- (b) Nếu thanh NỘI LỰC đầy → nhả tay, VUỐT dùng kỹ năng, rồi giật cần
     if F.useInnerPower then
       if (not F.useColorDetection) or Utils.anchorActive(A.innerPowerReady) then
+        ensureRelease()   -- nhả reel trước khi vuốt (không giữ + vuốt cùng lúc)
         if F.useColorDetection then
           Utils.notify("Nội lực đầy — vuốt kỹ năng!")
         end
         local ip = C.innerPowerSwipe
         Utils.swipe(ip.from.x, ip.from.y, ip.to.x, ip.to.y, ip.durationMs)
-        -- (d) GIẬT CẦN ngay sau khi dùng nội lực để thu cá mạnh
         Utils.tap(C.reelButton.x, C.reelButton.y, T.tapDownMs)
       end
     end
 
-    -- (e) Kiểm tra đã câu xong chưa (hiện màn phần thưởng / hết nút tension)
-    if F.useColorDetection then
-      local rewardUp   = Utils.anchorActive(A.rewardScreen)
-      local stillFight = Utils.anchorActive(A.fishHooked)
-      if rewardUp or (not stillFight) then
-        Utils.notify("Đã kéo cá xong.")
-        return STATE.FINISH
+    -- (c) Duy trì lực căng dây theo chế độ đã chọn
+    local danger = F.useColorDetection and Utils.anchorActive(A.tensionDanger)
+
+    if Config.tension.mode == "hold" then
+      -- NHẤN GIỮ để kéo; NHẢ ra khi dây sắp căng đứt; giữ lại khi an toàn.
+      if danger then
+        if holding then Utils.logMsg("Dây căng — NHẢ tay.") end
+        ensureRelease()
+      else
+        if not holding then
+          Utils.press(C.tensionButton.x, C.tensionButton.y)
+          holding = true
+        end
+      end
+    else
+      -- Chế độ "tap": nhấp liên tục, ngừng khi vào vùng nguy hiểm.
+      if not danger then
+        Utils.tap(C.tensionButton.x, C.tensionButton.y, T.tapDownMs)
       end
     end
 
@@ -151,6 +170,7 @@ local function fightFish()
     elapsed = elapsed + pollMs
   end
 
+  ensureRelease()
   Utils.notify("Kéo cá quá lâu — chuyển sang xử lý kết thúc.")
   return STATE.FINISH
 end

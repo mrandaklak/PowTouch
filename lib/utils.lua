@@ -173,6 +173,25 @@ function Utils.tapN(x, y, times, intervalMs, holdMs)
   end
 end
 
+-- Nhấn giữ (chỉ xuống, KHÔNG nhả) — dùng cho cơ chế giữ-rồi-nhả như tension.
+function Utils.press(x, y)
+  BE.down(sx(x), sy(y))
+end
+
+-- Nhả ra (touch up). Đây là lúc nhiều game đăng ký hành động ("nhả ra là nhấp").
+function Utils.release(x, y)
+  BE.up(sx(x), sy(y))
+end
+
+-- Nhấn giữ trong holdMs rồi mới nhả — kiểm soát chính xác thời điểm "nhả".
+function Utils.holdRelease(x, y, holdMs)
+  holdMs = holdMs or 100
+  local px, py = sx(x), sy(y)
+  BE.down(px, py)
+  Utils.sleepMs(holdMs)
+  BE.up(px, py)
+end
+
 function Utils.swipe(x1, y1, x2, y2, durationMs, steps)
   steps = steps or 12
   durationMs = durationMs or 200

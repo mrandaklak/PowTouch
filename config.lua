@@ -92,6 +92,14 @@ Config.timing = {
   castGaugeTimeoutMs  = 4000,  -- chờ tối đa để canh vạch perfect
 }
 
+-- Cơ chế TENSION (giữ lực căng dây khi kéo cá)
+Config.tension = {
+  -- "hold" : NHẤN GIỮ để kéo (tension tăng), NHẢ ra khi dây sắp căng đứt,
+  --          rồi giữ lại khi an toàn — giống cách chơi tay. (khuyên dùng)
+  -- "tap"  : nhấp liên tục (cơ chế cũ, đơn giản hơn nhưng dễ đứt dây).
+  mode = "hold",
+}
+
 -- Bật/tắt các cơ chế
 Config.features = {
   useColorDetection = true,   -- true: dùng màu để nhận diện; false: chạy theo thời gian
