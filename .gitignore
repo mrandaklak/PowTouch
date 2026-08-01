@@ -1,0 +1,11 @@
+# Visual Studio / IDE
+.vs/
+*.user
+*.suo
+
+# macOS / Windows rác hệ thống
+.DS_Store
+Thumbs.db
+
+# Lua build
+*.luac
