@@ -58,15 +58,18 @@ Nếu chưa muốn dùng nhận diện màu, đặt `Config.features.useColorDet
 
 ## Chạy
 
-Chạy `fishing.lua` (nút Play trong XXTouch/AutoTouch). Dừng bằng nút Stop, hoặc
-đặt `Config.maxCatches` > 0 để tự dừng sau số cá nhất định.
+Chạy `fishing.lua` (nút Play trong AutoTouch/XXTouch). Dừng bằng nút Stop.
 
-## Tuỳ chỉnh nhanh (`config.lua`)
+## Config cơ bản (`config.lua` → `Config.basic`)
 
-- `Config.features.useInnerPower` – bật/tắt vuốt nội lực.
-- `Config.timing.tensionTapIntervalMs` – tần suất nhấp tension.
-- `Config.timing.fightTimeoutMs` – thời gian tối đa cho một trận kéo cá.
-- `Config.features.verboseLog` – bật log chi tiết để debug.
+Thường chỉ cần chỉnh 3 mục này:
+
+- `tapPerfect` – `true` canh vạch perfect khi quăng; `false` quăng thường.
+- `maxCatches` – số cá tối đa rồi tự dừng (`0` = không giới hạn).
+- `maxHours` – số giờ chạy tối đa rồi tự dừng (`0` = không giới hạn; vd `1.5` = 1h30).
+
+Phần toạ độ/màu (`Config.coords`, `Config.anchors`) và tham số nâng cao nằm
+dưới mục "NÂNG CAO / HIỆU CHỈNH" — chỉ chỉnh khi hiệu chỉnh cho đúng máy.
 
 ## Ghi chú
 

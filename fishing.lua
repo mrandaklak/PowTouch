@@ -48,6 +48,7 @@ local C  = Config.coords
 local A  = Config.anchors
 local T  = Config.timing
 local F  = Config.features
+local B  = Config.basic
 
 -- Các trạng thái của máy trạng thái ---------------------------------------
 local STATE = {
@@ -69,20 +70,21 @@ local function doCast()
   -- Nhấn START để bắt đầu quăng (thanh lực bắt đầu chạy)
   Utils.tap(C.startButton.x, C.startButton.y, T.tapDownMs)
 
-  if F.useColorDetection then
-    -- Chờ thanh lực chạy tới vùng PERFECT rồi chốt ngay
+  if B.tapPerfect and F.useColorDetection then
+    -- Canh perfect: chờ thanh lực chạy tới vùng PERFECT rồi chốt ngay
     local perfect = Utils.waitForAnchor(A.castPerfect, T.castGaugeTimeoutMs, 10)
+    Utils.tap(C.castTapPoint.x, C.castTapPoint.y, T.tapDownMs)
     if perfect then
-      Utils.tap(C.castTapPoint.x, C.castTapPoint.y, T.tapDownMs)
       Utils.notify("Chốt lực PERFECT!")
     else
-      -- Không bắt được vạch perfect → chốt luôn để không kẹt
-      Utils.tap(C.castTapPoint.x, C.castTapPoint.y, T.tapDownMs)
       Utils.notify("Không thấy vạch perfect, chốt lực mặc định.")
     end
-  else
-    -- Chế độ theo thời gian: chờ 1 khoảng cố định rồi chốt
+  elseif B.tapPerfect then
+    -- Canh perfect theo thời gian (không dùng màu)
     Utils.sleepMs(T.castGaugeTimeoutMs / 2)
+    Utils.tap(C.castTapPoint.x, C.castTapPoint.y, T.tapDownMs)
+  else
+    -- Không canh perfect: chốt lực luôn (quăng thường)
     Utils.tap(C.castTapPoint.x, C.castTapPoint.y, T.tapDownMs)
   end
 
@@ -138,17 +140,15 @@ local function fightFish()
       end
     end
 
-    -- (b) Nếu thanh NỘI LỰC đầy → nhả tay, VUỐT dùng kỹ năng, rồi giật cần
-    if F.useInnerPower then
-      if (not F.useColorDetection) or Utils.anchorActive(A.innerPowerReady) then
-        ensureRelease()   -- nhả reel trước khi vuốt (không giữ + vuốt cùng lúc)
-        if F.useColorDetection then
-          Utils.notify("Nội lực đầy — vuốt kỹ năng!")
-        end
-        local ip = C.innerPowerSwipe
-        Utils.swipe(ip.from.x, ip.from.y, ip.to.x, ip.to.y, ip.durationMs)
-        Utils.tap(C.reelButton.x, C.reelButton.y, T.tapDownMs)
+    -- (b) Khi thanh NỘI LỰC đầy → nhả tay, VUỐT dùng kỹ năng, rồi giật cần
+    if (not F.useColorDetection) or Utils.anchorActive(A.innerPowerReady) then
+      ensureRelease()   -- nhả reel trước khi vuốt (không giữ + vuốt cùng lúc)
+      if F.useColorDetection then
+        Utils.notify("Nội lực đầy — vuốt kỹ năng!")
       end
+      local ip = C.innerPowerSwipe
+      Utils.swipe(ip.from.x, ip.from.y, ip.to.x, ip.to.y, ip.durationMs)
+      Utils.tap(C.reelButton.x, C.reelButton.y, T.tapDownMs)
     end
 
     -- (c) Duy trì lực căng dây theo chế độ đã chọn
@@ -200,7 +200,7 @@ local function finish()
     end
   end
 
-  if Config.maxCatches > 0 and catches >= Config.maxCatches then
+  if B.maxCatches > 0 and catches >= B.maxCatches then
     Utils.notify("Đã đạt số cá tối đa, dừng script.")
     running = false
   end
@@ -216,7 +216,17 @@ local function main()
   Utils.notify("=== Ace Fishing bot bắt đầu ===")
   local state = STATE.READY
 
+  -- Mốc thời gian bắt đầu, để áp giới hạn maxHours (giây)
+  local startTime = (type(os) == "table" and os.time) and os.time() or nil
+  local maxSeconds = (B.maxHours or 0) * 3600
+
   while running do
+    -- Giới hạn thời gian chạy tối đa
+    if maxSeconds > 0 and startTime and (os.time() - startTime) >= maxSeconds then
+      Utils.notify("Đã đạt thời gian tối đa, dừng script.")
+      break
+    end
+
     if state == STATE.READY then
       -- Nếu có nhận diện màu, đợi tới khi đúng màn hình sẵn sàng
       if F.useColorDetection and not Utils.anchorActive(A.ready) then
