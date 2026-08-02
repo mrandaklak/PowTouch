@@ -35,11 +35,12 @@ local TBAR = { x0 = 315, x1 = 1000, y = 115, probes = 30, fillMinR = 150, fillRB
 
 -- Anchor màu: { x, y, color(0xRRGGBB), tol } — màu đo thật từ video.
 local ANCH = {
-  ready       = { x = 515, y = 1558, color = 0x33ABC5, tol = 45 }, -- mặt xanh nút START
+  ready       = { x = 515, y = 1558, color = 0x0098B9, tol = 40 }, -- mặt xanh nút START (đo THẬT trên máy)
   gaugeTarget = { x = 535, y = 1180, color = 0x5E9999, tol = 42 }, -- vùng teal vòng cung (gauge hiện)
   castPerfect = { x = 550, y = 1180, color = 0xF2D515, tol = 60 }, -- kim VÀNG về tâm = perfect
   rewardScreen= { x = 540, y = 1130, color = 0x000000, tol = 12 }, -- (phụ) — chủ yếu dựa vào "mất tension"
   innerPowerReady = { x = 915, y = 1620, color = 0x00E0FF, tol = 34 }, -- nút "Nhiệt Huyết" (đang TẮT tính năng)
+  resultBtn   = { x = 660, y = 1755, color = 0x016A9C, tol = 40 }, -- dãy nút xanh đáy = ĐANG ở màn kết quả
 }
 
 -- Cơ chế giữ–nhả tension
@@ -48,7 +49,7 @@ local TEN = { armPct = 78, rearmDrop = 8, releaseMs = 90, minHoldMs = 70, hooked
 -- Thời gian (ms)
 local TIME = {
   loopSleep = 40, tapDown = 30, reelPoll = 30,
-  castGaugeTimeout = 6000, perfectMax = 4000,
+  castGaugeTimeout = 2500, perfectMax = 3000,
   afterCastWaitMax = 18000, fightTimeout = 60000, betweenFish = 1200,
 }
 
@@ -271,34 +272,59 @@ end
 -- ==========================================================================
 -- MÁY TRẠNG THÁI CÂU CÁ
 -- ==========================================================================
-local STATE = { READY="READY", CAST="CAST", WAIT="WAIT", FIGHT="FIGHT", FINISH="FINISH" }
+local STATE = { CAST="CAST", WAIT="WAIT", FIGHT="FIGHT", FINISH="FINISH", DISMISS="DISMISS" }
 local running = true
 local catches = 0
+local dismissStreak = 0   -- chặn bấm "<" liên tục làm thoát khu câu
 
+-- DEBUG: ghi màu thật tại điểm để hiệu chỉnh (không dùng màu nút nhấp nháy).
+local DEBUG = true
+local function hexc(c) if not c then return "nil" end local r,g,b=rgb(c); return string.format("0x%02X%02X%02X(r%d g%d b%d)",r,g,b,r,g,b) end
+local function readAt(x,y) return BE.getColor1(sx(x), sy(y)) end
+
+-- QUĂNG kiểu AutoJS: bấm START rồi XÁC NHẬN bằng gauge teal (không đọc nút nhấp
+-- nháy). Thấy teal = đã vào canh perfect. Không thấy sau timeout = đang ở màn
+-- kết quả/menu -> trả DISMISS để bấm "<" quay lại.
 local function doCast()
   notify("Quang can...")
   tap(COORDS.startButton.x, COORDS.startButton.y)
 
-  if not FEAT.useColorDetection then
-    sleepMs(TIME.castGaugeTimeout/2)
-    tap(COORDS.castTapPoint.x, COORDS.castTapPoint.y)
-    return STATE.WAIT
+  -- Chờ gauge teal hiện; vừa chờ vừa GHI màu điểm gauge để hiệu chỉnh teal.
+  local opened=false
+  local w=0
+  local lastLog=-1000
+  while w < TIME.castGaugeTimeout do
+    if anchorActive(ANCH.gaugeTarget) then opened=true; break end
+    if DEBUG and (w-lastLog)>=400 then lastLog=w
+      logMsg("[dbg] gauge("..ANCH.gaugeTarget.x..","..ANCH.gaugeTarget.y..")="..hexc(readAt(ANCH.gaugeTarget.x,ANCH.gaugeTarget.y)).." kyvong 0x5E9999")
+    end
+    sleepMs(40); w=w+40
   end
 
-  if not waitAnchor(ANCH.gaugeTarget, TIME.castGaugeTimeout, 20) then
-    notify("Khong thay vong cung luc, thu lai.")
-    return STATE.READY
-  end
+  -- Dù có phát hiện được teal hay không, vẫn CHỐT rồi vào kéo (an toàn: nếu đang ở
+  -- màn kết quả thì tap không ăn, fightFish sẽ hết giờ -> finish() thấy nút xanh mới
+  -- bấm "<"). Nhờ vậy KHÔNG bao giờ bấm "<" nhầm trên màn sẵn sàng.
+  logMsg(opened and "[cast] thay gauge teal -> canh chot" or "[cast] KHONG thay teal (van chot thu, xem [dbg] gauge de chinh mau)")
 
   if RUN.perfectCast then
-    local hit = waitAnchor(ANCH.castPerfect, TIME.perfectMax, 8)
+    -- Canh kim VÀNG về tâm rồi chốt; vừa canh vừa ghi màu kim để hiệu chỉnh.
+    local hit=false; local pw=0; local plog=-1000
+    while pw < TIME.perfectMax do
+      if anchorActive(ANCH.castPerfect) then hit=true; break end
+      if not anchorActive(ANCH.gaugeTarget) then break end -- gauge tắt bất ngờ
+      if DEBUG and (pw-plog)>=300 then plog=pw
+        logMsg("[dbg] needle("..ANCH.castPerfect.x..","..ANCH.castPerfect.y..")="..hexc(readAt(ANCH.castPerfect.x,ANCH.castPerfect.y)).." kyvong 0xF2D515")
+      end
+      sleepMs(15); pw=pw+15
+    end
     tap(COORDS.castTapPoint.x, COORDS.castTapPoint.y)
-    notify(hit and "Chot luc PERFECT!" or "Het gio canh - chot thuong.")
+    notify(hit and "Chot PERFECT!" or "Chot thuong (het gio canh)")
   else
     tap(COORDS.castTapPoint.x, COORDS.castTapPoint.y)
     notify("Quang thuong.")
   end
-  return STATE.WAIT
+  -- Quăng xong: vào kéo cá luôn (giữ orb để thu + hook), fightFish tự đo tension.
+  return STATE.FIGHT
 end
 
 local function waitForBite()
@@ -311,7 +337,7 @@ local function waitForBite()
     sleepMs(30); w=w+30
   end
   notify("Het gio cho - quang lai.")
-  return STATE.READY
+  return STATE.DISMISS
 end
 
 local function fightFish()
@@ -340,8 +366,14 @@ local function fightFish()
 
     if ok and pct>TEN.hookedPct then hooked=true; lastSeen=elapsed end
 
+    if DEBUG and (elapsed % 700) < TIME.reelPoll then
+      logMsg("[dbg] fight t="..elapsed.." tension="..math.floor(pct+0.5)
+        .." ok="..tostring(ok).." hooked="..tostring(hooked).." hold="..tostring(holding))
+    end
+
     if rewardUp then rel(); notify("Da keo ca xong."); return STATE.FINISH end
     if hooked and (elapsed-lastSeen)>1500 then rel(); notify("Mat tension - coi nhu xong."); return STATE.FINISH end
+    if (not hooked) and elapsed>9000 then rel(); notify("Khong thay ca - ket thuc."); return STATE.FINISH end
 
     if ipReady and hooked then
       rel()
@@ -368,27 +400,49 @@ local function fightFish()
   return STATE.FINISH
 end
 
+-- Câu xong. CHỈ bấm "<" khi ĐANG ở màn kết quả (dãy nút xanh đáy) -> tuyệt đối
+-- không bấm "<" trên màn sẵn sàng (sẽ thoát khu câu). Chỉ đếm khi có màn kết quả.
 local function finish()
-  catches = catches + 1
-  notify(string.format("Cau xong! Tong: %d con", catches))
-  if FEAT.autoConfirmReward then
-    -- KIỂM TRA "sẵn sàng" TRƯỚC khi bấm: nút "<" quay lại nằm cùng chỗ trên cả màn
-    -- kết quả LẪN màn sẵn sàng — nếu bấm khi đã về sẵn sàng sẽ thoát khu câu.
-    for _=1,6 do
-      if FEAT.useColorDetection and anchorActive(ANCH.ready) then break end
-      tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
-      sleepMs(500)
+  -- Chờ màn kết quả hiện (cá có animation kéo lên) tối đa ~3s.
+  local w=0
+  while w<3000 and not anchorActive(ANCH.resultBtn) do sleepMs(150); w=w+150 end
+  if anchorActive(ANCH.resultBtn) then
+    catches = catches + 1
+    notify(string.format("Cau duoc! Tong: %d con", catches))
+    if FEAT.autoConfirmReward then
+      for _=1,5 do
+        if not anchorActive(ANCH.resultBtn) then break end
+        tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
+        sleepMs(600)
+      end
     end
-  end
-  if RUN.targetCount>0 and catches>=RUN.targetCount then
-    notify(string.format("Da du %d con - dung.", RUN.targetCount)); running=false
+    if RUN.targetCount>0 and catches>=RUN.targetCount then
+      notify(string.format("Da du %d con - dung.", RUN.targetCount)); running=false
+    end
+  else
+    notify("Ket thuc (khong thay man ket qua) - quang lai")
   end
   sleepMs(TIME.betweenFish)
-  return STATE.READY
+  return STATE.CAST
+end
+
+-- Không phải màn sẵn sàng (kết quả/menu) -> bấm "<" quay lại rồi thử quăng lại.
+-- CHẶN AN TOÀN: bấm "<" quá nhiều lần liên tiếp mà vẫn không quăng được -> DỪNG,
+-- kẻo bấm "<" trên màn sẵn sàng sẽ thoát khu câu và đi lung tung.
+local function dismiss()
+  dismissStreak = dismissStreak + 1
+  if dismissStreak > 3 then
+    notify("Bam '<' 3 lan van khong quang duoc -> DUNG de an toan. Kiem tra toa do/gauge.")
+    running = false
+    return STATE.DISMISS
+  end
+  tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
+  sleepMs(800)
+  return STATE.CAST
 end
 
 -- ==========================================================================
--- VÀO CHƯƠNG TRÌNH
+-- VÀO CHƯƠNG TRÌNH — vòng lặp XÁC NHẬN BẰNG GAUGE (không đọc nút nhấp nháy)
 -- ==========================================================================
 local choice = showConfig()
 if not choice.ok then notify("Da huy - khong chay."); return end
@@ -398,37 +452,22 @@ RUN.targetCount = choice.targetCount
 notify(string.format("=== Ace Fishing === Perfect=%s Muc tieu=%s",
   tostring(RUN.perfectCast), RUN.targetCount==0 and "vo han" or tostring(RUN.targetCount)))
 
--- ---- DEBUG: đọc màu THẬT tại các điểm để chỉnh anchor cho khớp máy ----------
-local DEBUG = true
-local function hexc(c) if not c then return "nil" end local r,g,b=rgb(c); return string.format("0x%02X%02X%02X (r%d g%d b%d)",r,g,b,r,g,b) end
-local function readAt(x,y) return BE.getColor1(sx(x), sy(y)) end
 if DEBUG then
   local rw,rh = BE.screenSize()
   logMsg("[dbg] res="..tostring(rw).."x"..tostring(rh)..string.format(" scale=%.3f", SX))
-  logMsg("[dbg] ready ("..ANCH.ready.x..","..ANCH.ready.y..") = "..hexc(readAt(ANCH.ready.x,ANCH.ready.y)).."  ky vong 0x33ABC5")
-  logMsg("[dbg] start ("..COORDS.startButton.x..","..COORDS.startButton.y..") = "..hexc(readAt(COORDS.startButton.x,COORDS.startButton.y)))
-  logMsg("[dbg] gauge ("..ANCH.gaugeTarget.x..","..ANCH.gaugeTarget.y..") = "..hexc(readAt(ANCH.gaugeTarget.x,ANCH.gaugeTarget.y)))
   local p,ok = measureTensionPct(TBAR)
-  logMsg(string.format("[dbg] tension = %.1f%%  ok=%s", p, tostring(ok)))
+  logMsg("[dbg] tension khoi dau = "..math.floor(p+0.5).." ok="..tostring(ok))
 end
-local dbgReadyAt = 0
 
-local state = STATE.READY
+-- Bắt đầu bằng CAST: bấm START, nếu thấy gauge teal = đang ở màn sẵn sàng -> câu.
+local state = STATE.CAST
 while running do
-  if state==STATE.READY then
-    if FEAT.useColorDetection and not anchorActive(ANCH.ready) then
-      if DEBUG then dbgReadyAt = dbgReadyAt + TIME.loopSleep
-        if dbgReadyAt >= 1500 then dbgReadyAt = 0
-          logMsg("[dbg] READY cho... mau tai ("..ANCH.ready.x..","..ANCH.ready.y..") = "..hexc(readAt(ANCH.ready.x,ANCH.ready.y)))
-        end
-      end
-      sleepMs(TIME.loopSleep)
-    else state=STATE.CAST end
-  elseif state==STATE.CAST   then state=doCast()
-  elseif state==STATE.WAIT   then state=waitForBite()
-  elseif state==STATE.FIGHT  then state=fightFish()
+  if state==STATE.CAST      then state=doCast()
+  elseif state==STATE.WAIT  then state=waitForBite()
+  elseif state==STATE.FIGHT then state=fightFish()
   elseif state==STATE.FINISH then state=finish()
-  else notify("Trang thai la: "..tostring(state)); state=STATE.READY end
+  elseif state==STATE.DISMISS then state=dismiss()
+  else notify("Trang thai la: "..tostring(state)); state=STATE.CAST end
   sleepMs(TIME.loopSleep)
 end
 notify("=== Dung bot. Tong ca: "..catches.." ===")
