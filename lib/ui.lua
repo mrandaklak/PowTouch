@@ -1,20 +1,25 @@
 --[[
   lib/ui.lua — Bảng cấu hình hiện ra TRƯỚC khi chạy bot.
 
-  Hỏi đúng 2 tuỳ chọn theo yêu cầu:
+  Hỏi đúng 2 tuỳ chọn:
     1. Canh Perfect     (bật/tắt)
-    2. Số cá cần câu    (0 = vô hạn) — câu đủ số này thì dừng.
+    2. Số cá cần câu    (0 = vô hạn)
 
-  Dùng dialog() của AutoTouch. Nếu môi trường không có dialog (vd XXTouch chạy
-  headless), tự bỏ qua và trả về giá trị mặc định trong config.
+  Dùng dialog() của AutoTouch. API dialog KHÁC NHAU theo bản: đối số thứ 2
+  (orientations) có bản nhận BẢNG {ORIENTATION_TYPE.PORTRAIT}, có bản nhận SỐ,
+  có bản không cần. Nên ta gọi PHÒNG THỦ bằng pcall: thử lần lượt, cái nào chạy
+  thì dùng; nếu hỏng hết thì rơi về giá trị mặc định để bot vẫn chạy được.
 
-  Trả về: table { perfectCast = bool, targetCount = number, ok = bool }
-    ok = false nghĩa là người dùng bấm Huỷ (không nên chạy).
+  Trả về: { perfectCast = bool, targetCount = number, ok = bool }
 ]]
 
 local UI = {}
 
--- Đọc lại value của 1 control theo key sau khi dialog đóng.
+local function safeLog(msg)
+  if type(log) == "function" then log(msg)
+  elseif type(nLog) == "function" then nLog(msg) end
+end
+
 local function valueByKey(controls, key)
   for _, c in ipairs(controls) do
     if c.key == key then return c.value end
@@ -38,53 +43,66 @@ local function toCount(v)
   return math.floor(n)
 end
 
--- Hiện bảng cấu hình. `defaults` = Config.run.
 function UI.showConfig(defaults)
   defaults = defaults or {}
   local defPerfect = defaults.perfectCast and 1 or 0
   local defCount   = tostring(defaults.targetCount or 0)
 
-  -- Không có dialog (hoặc thiếu hằng CONTROLLER_TYPE) -> dùng mặc định, chạy luôn.
+  local function fallback()
+    return { perfectCast = toBool(defPerfect), targetCount = toCount(defCount), ok = true }
+  end
+
+  -- Không có dialog (hoặc thiếu CONTROLLER_TYPE) -> chạy với mặc định.
   if type(dialog) ~= "function" or type(CONTROLLER_TYPE) ~= "table" then
-    return {
-      perfectCast = toBool(defPerfect),
-      targetCount = toCount(defCount),
-      ok = true,
-    }
+    safeLog("[ui] Không có dialog/CONTROLLER_TYPE -> dùng mặc định")
+    return fallback()
   end
 
   local controls = {
-    { type = CONTROLLER_TYPE.LABEL,
-      text = "🎣 Ace Fishing — Cấu hình" },
-
-    { type = CONTROLLER_TYPE.SWITCH,
-      key = "perfect",
-      title = "Canh Perfect",
-      value = defPerfect },
-
-    { type = CONTROLLER_TYPE.INPUT,
-      key = "count",
-      title = "Số cá cần câu (0 = vô hạn)",
-      value = defCount },
-
-    { type = CONTROLLER_TYPE.BUTTON,
-      title = "Bắt đầu",
-      color = 0x1E90FF, width = 0.5, flag = 1, collectInputs = true },
-
-    { type = CONTROLLER_TYPE.BUTTON,
-      title = "Huỷ",
-      color = 0x8E8E93, width = 0.5, flag = 2, collectInputs = false },
+    { type = CONTROLLER_TYPE.LABEL,  text = "Ace Fishing - Cau hinh" },
+    { type = CONTROLLER_TYPE.SWITCH, key = "perfect", title = "Canh Perfect", value = defPerfect },
+    { type = CONTROLLER_TYPE.INPUT,  key = "count",   title = "So ca can cau (0 = vo han)", value = defCount },
+    { type = CONTROLLER_TYPE.BUTTON, title = "Bat dau", color = 0x1E90FF, flag = 1, collectInputs = true },
+    { type = CONTROLLER_TYPE.BUTTON, title = "Huy",     color = 0x8E8E93, flag = 2, collectInputs = false },
   }
 
-  local orientation = (type(ORIENTATION_TYPE) == "table" and ORIENTATION_TYPE.PORTRAIT) or 0
-  local result = dialog(controls, orientation)
-
-  -- `result` là flag nút được bấm (1 = Bắt đầu, 2 = Huỷ). Một số bản trả về
-  -- table controls; khi đó coi như OK (giá trị đã nằm trong controls).
-  local ok = true
-  if type(result) == "number" then
-    ok = (result == 1)
+  -- Chuẩn bị các kiểu orientations có thể có.
+  local oriTable, oriNum
+  if type(ORIENTATION_TYPE) == "table" and ORIENTATION_TYPE.PORTRAIT ~= nil then
+    oriTable = { ORIENTATION_TYPE.PORTRAIT }
+    oriNum   = ORIENTATION_TYPE.PORTRAIT
+  else
+    oriTable = { 1 }
+    oriNum   = 1
   end
+
+  -- Thử lần lượt các cách gọi; cái nào KHÔNG lỗi thì dùng.
+  local attempts = {
+    function() return dialog(controls, oriTable) end,  -- orientations là BẢNG (AutoTouch 8.x)
+    function() return dialog(controls, oriNum)   end,  -- orientations là SỐ
+    function() return dialog(controls)           end,  -- không truyền orientations
+  }
+
+  local called, result, lastErr = false, nil, nil
+  for i = 1, #attempts do
+    local okCall, res = pcall(attempts[i])
+    if okCall then
+      called = true; result = res; break
+    else
+      lastErr = res
+      safeLog("[ui] cách gọi dialog #" .. i .. " lỗi: " .. tostring(res))
+    end
+  end
+
+  if not called then
+    safeLog("[ui] Mọi cách gọi dialog đều lỗi (" .. tostring(lastErr) .. ") -> dùng mặc định")
+    return fallback()
+  end
+
+  -- result thường là flag nút bấm (1 = Bắt đầu, 2 = Huỷ). Bản trả về khác thì
+  -- coi như OK và đọc giá trị đã cập nhật trong controls.
+  local ok = true
+  if type(result) == "number" then ok = (result == 1) end
 
   return {
     perfectCast = toBool(valueByKey(controls, "perfect")),
