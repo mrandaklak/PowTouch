@@ -25,7 +25,11 @@ local COORDS = {
   castTapPoint  = { x = 540,  y = 1575 }, -- cùng nút START, hiện "TAP" để chốt lực
   reelButton    = { x = 540,  y = 1590 }, -- nút reel/orb (giữ để kéo cá)
   innerPowerSwipe = { from = { x = 540, y = 1500 }, to = { x = 540, y = 1050 }, durationMs = 160 },
-  confirmPoint  = { x = 55,   y = 120  }, -- mũi tên "<" quay lại (đóng màn kết quả)
+  confirmPoint  = { x = 55,   y = 120  }, -- mũi tên "<" quay lại (dự phòng)
+  -- 4 nút đáy màn KẾT QUẢ. Ưu tiên xử lý cá: Hội -> Thêm(Add) -> Bán.
+  btnHoi  = { x = 420, y = 1755 },  -- Hội (góp cá cho hội)
+  btnThem = { x = 910, y = 1755 },  -- Thêm / Add (vào bộ sưu tập)
+  btnBan  = { x = 660, y = 1755 },  -- Bán
 }
 
 -- Thanh lực (tension): NGANG ở trên cùng. x0=0%, x1=100%(vạch "HIGH"/đứt), y=hàng bar.
@@ -436,6 +440,20 @@ end
 
 -- Câu xong. CHỈ bấm "<" khi ĐANG ở màn kết quả (dãy nút xanh đáy) -> tuyệt đối
 -- không bấm "<" trên màn sẵn sàng (sẽ thoát khu câu). Chỉ đếm khi có màn kết quả.
+-- XỬ LÝ CÁ ở màn kết quả: bấm theo ưu tiên Hội -> Thêm(Add) -> Bán, dừng ngay khi
+-- màn kết quả biến mất (dãy nút xanh mất). Rồi chờ màn đóng hẳn (START sắp về).
+local function disposeResult()
+  local order = { {COORDS.btnHoi,"Hoi"}, {COORDS.btnThem,"Add"}, {COORDS.btnBan,"Ban"} }
+  for _,b in ipairs(order) do
+    if not anchorActive(ANCH.resultBtn) then break end
+    tap(b[1].x, b[1].y); notify("Xu ly ca: nhan "..b[2])
+    sleepMs(1200)
+  end
+  -- chờ màn kết quả đóng hẳn
+  local w=0
+  while w<3000 and anchorActive(ANCH.resultBtn) do sleepMs(150); w=w+150 end
+end
+
 local function finish()
   -- Chờ màn kết quả hiện (cá có animation kéo lên) tối đa ~3s.
   local w=0
@@ -443,13 +461,7 @@ local function finish()
   if anchorActive(ANCH.resultBtn) then
     catches = catches + 1
     notify(string.format("Cau duoc! Tong: %d con", catches))
-    if FEAT.autoConfirmReward then
-      for _=1,5 do
-        if not anchorActive(ANCH.resultBtn) then break end
-        tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
-        sleepMs(600)
-      end
-    end
+    disposeResult()   -- Hội -> Add -> Bán
     if RUN.targetCount>0 and catches>=RUN.targetCount then
       notify(string.format("Da du %d con - dung.", RUN.targetCount)); running=false
     end
@@ -460,13 +472,12 @@ local function finish()
   return STATE.CAST
 end
 
--- Không mở được vòng cung. CHỈ bấm "<" khi ĐANG ở màn kết quả (có dãy nút xanh) ->
--- không bao giờ bấm "<" trên màn sẵn sàng (sẽ thoát khu câu). Nếu không phải màn
--- kết quả thì chỉ chờ rồi thử quăng lại; kẹt quá lâu -> DỪNG cho an toàn.
+-- Không mở được vòng cung. Nếu ĐANG ở màn kết quả (dãy nút xanh) -> xử lý cá
+-- (Hội/Add/Bán) như finish. Nếu không phải -> chỉ chờ rồi thử quăng lại; kẹt quá
+-- lâu -> DỪNG cho an toàn (không bao giờ bấm lung tung trên màn sẵn sàng).
 local function dismiss()
   if anchorActive(ANCH.resultBtn) then
-    tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)  -- đóng màn kết quả
-    sleepMs(700)
+    disposeResult()
     dismissStreak = 0
   else
     dismissStreak = dismissStreak + 1
