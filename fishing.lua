@@ -46,7 +46,7 @@ local ANCH = {
 -- Cơ chế GHIM SÁT VẠCH: giữ tension trong dải [armPct-rearmDrop, armPct].
 --   armPct=vạch nhả, rearmDrop=dải hẹp bên dưới để giữ lại. Dải nhỏ = ghim sát hơn.
 --   (releaseMs/minHoldMs không còn dùng ở chế độ ghim liên tục — giữ lại tham khảo.)
-local TEN = { armPct = 78, rearmDrop = 3, releaseMs = 90, minHoldMs = 70, hookedPct = 6 }
+local TEN = { armPct = 95, rearmDrop = 3, releaseMs = 90, minHoldMs = 70, hookedPct = 6 }
 
 -- Thời gian (ms)
 local TIME = {
@@ -284,48 +284,76 @@ local DEBUG = true
 local function hexc(c) if not c then return "nil" end local r,g,b=rgb(c); return string.format("0x%02X%02X%02X(r%d g%d b%d)",r,g,b,r,g,b) end
 local function readAt(x,y) return BE.getColor1(sx(x), sy(y)) end
 
--- QUĂNG kiểu AutoJS: bấm START rồi XÁC NHẬN bằng gauge teal (không đọc nút nhấp
--- nháy). Thấy teal = đã vào canh perfect. Không thấy sau timeout = đang ở màn
--- kết quả/menu -> trả DISMISS để bấm "<" quay lại.
-local function doCast()
-  notify("Quang can...")
-  tap(COORDS.startButton.x, COORDS.startButton.y)
-
-  -- Chờ gauge teal hiện; vừa chờ vừa GHI màu điểm gauge để hiệu chỉnh teal.
-  local opened=false
-  local w=0
-  local lastLog=-1000
-  while w < TIME.castGaugeTimeout do
-    if anchorActive(ANCH.gaugeTarget) then opened=true; break end
+-- Chờ gauge teal HIỆN, tối đa maxMs. Trả true nếu thấy.
+local function waitGaugeOn(maxMs)
+  local w=0; local lastLog=-1000
+  while w < maxMs do
+    if anchorActive(ANCH.gaugeTarget) then return true end
     if DEBUG and (w-lastLog)>=400 then lastLog=w
       logMsg("[dbg] gauge("..ANCH.gaugeTarget.x..","..ANCH.gaugeTarget.y..")="..hexc(readAt(ANCH.gaugeTarget.x,ANCH.gaugeTarget.y)).." kyvong 0x5E9999")
     end
     sleepMs(40); w=w+40
   end
+  return false
+end
 
-  -- Dù có phát hiện được teal hay không, vẫn CHỐT rồi vào kéo (an toàn: nếu đang ở
-  -- màn kết quả thì tap không ăn, fightFish sẽ hết giờ -> finish() thấy nút xanh mới
-  -- bấm "<"). Nhờ vậy KHÔNG bao giờ bấm "<" nhầm trên màn sẵn sàng.
-  logMsg(opened and "[cast] thay gauge teal -> canh chot" or "[cast] KHONG thay teal (van chot thu, xem [dbg] gauge de chinh mau)")
+-- Chờ gauge teal TẮT, tối đa maxMs. Trả true nếu đã tắt (= cast đã ăn).
+local function waitGaugeOff(maxMs)
+  local w=0
+  while w < maxMs do
+    if not anchorActive(ANCH.gaugeTarget) then return true end
+    sleepMs(40); w=w+40
+  end
+  return false
+end
 
-  if RUN.perfectCast then
-    -- Canh kim VÀNG về tâm rồi chốt; vừa canh vừa ghi màu kim để hiệu chỉnh.
-    local hit=false; local pw=0; local plog=-1000
-    while pw < TIME.perfectMax do
-      if anchorActive(ANCH.castPerfect) then hit=true; break end
-      if not anchorActive(ANCH.gaugeTarget) then break end -- gauge tắt bất ngờ
-      if DEBUG and (pw-plog)>=300 then plog=pw
-        logMsg("[dbg] needle("..ANCH.castPerfect.x..","..ANCH.castPerfect.y..")="..hexc(readAt(ANCH.castPerfect.x,ANCH.castPerfect.y)).." kyvong 0xF2D515")
+-- QUĂNG kiểu AutoJS, CÓ XÁC NHẬN:
+--   1) MỞ: bấm START tới khi vòng cung teal HIỆN (thử vài lần).
+--   2) CHỐT: canh perfect rồi tap; XÁC NHẬN cast đã ăn = vòng cung TẮT. Chưa tắt
+--      thì tap lại. Nhờ vậy biết chắc "đã quăng được cần" mới vào kéo.
+local function doCast()
+  notify("Quang can...")
+
+  -- 1) MỞ vòng cung
+  local opened=false
+  for t=1,4 do
+    tap(COORDS.startButton.x, COORDS.startButton.y)
+    if waitGaugeOn(1200) then opened=true; break end
+    logMsg("[cast] START lan "..t..": chua thay vong cung, thu lai")
+  end
+  if not opened then
+    logMsg("[cast] khong mo duoc vong cung -> co the o man ket qua/menu")
+    return STATE.DISMISS
+  end
+  dismissStreak = 0
+  logMsg("[cast] vong cung teal HIEN -> canh chot")
+
+  -- 2) CHỐT lực + XÁC NHẬN cast đã ăn (vòng cung tắt)
+  local casted=false
+  for t=1,4 do
+    if RUN.perfectCast and t==1 then
+      -- canh kim VÀNG về tâm (chỉ ở lần chốt đầu)
+      local hit=false; local pw=0; local plog=-1000
+      while pw < TIME.perfectMax do
+        if anchorActive(ANCH.castPerfect) then hit=true; break end
+        if not anchorActive(ANCH.gaugeTarget) then break end
+        if DEBUG and (pw-plog)>=300 then plog=pw
+          logMsg("[dbg] needle("..ANCH.castPerfect.x..","..ANCH.castPerfect.y..")="..hexc(readAt(ANCH.castPerfect.x,ANCH.castPerfect.y)).." kyvong 0xF2D515")
+        end
+        sleepMs(15); pw=pw+15
       end
-      sleepMs(15); pw=pw+15
+      notify(hit and "Chot PERFECT!" or "Chot thuong (het gio canh)")
     end
     tap(COORDS.castTapPoint.x, COORDS.castTapPoint.y)
-    notify(hit and "Chot PERFECT!" or "Chot thuong (het gio canh)")
-  else
-    tap(COORDS.castTapPoint.x, COORDS.castTapPoint.y)
-    notify("Quang thuong.")
+    if waitGaugeOff(1500) then casted=true; break end
+    logMsg("[cast] chot lan "..t..": vong cung CHUA tat, tap lai")
   end
-  -- Quăng xong: vào kéo cá luôn (giữ orb để thu + hook), fightFish tự đo tension.
+
+  if not casted then
+    notify("Quang KHONG an (vong cung con) -> thu lai")
+    return STATE.CAST
+  end
+  notify("Da quang can OK -> keo ca")
   return STATE.FIGHT
 end
 
@@ -432,18 +460,22 @@ local function finish()
   return STATE.CAST
 end
 
--- Không phải màn sẵn sàng (kết quả/menu) -> bấm "<" quay lại rồi thử quăng lại.
--- CHẶN AN TOÀN: bấm "<" quá nhiều lần liên tiếp mà vẫn không quăng được -> DỪNG,
--- kẻo bấm "<" trên màn sẵn sàng sẽ thoát khu câu và đi lung tung.
+-- Không mở được vòng cung. CHỈ bấm "<" khi ĐANG ở màn kết quả (có dãy nút xanh) ->
+-- không bao giờ bấm "<" trên màn sẵn sàng (sẽ thoát khu câu). Nếu không phải màn
+-- kết quả thì chỉ chờ rồi thử quăng lại; kẹt quá lâu -> DỪNG cho an toàn.
 local function dismiss()
-  dismissStreak = dismissStreak + 1
-  if dismissStreak > 3 then
-    notify("Bam '<' 3 lan van khong quang duoc -> DUNG de an toan. Kiem tra toa do/gauge.")
-    running = false
-    return STATE.DISMISS
+  if anchorActive(ANCH.resultBtn) then
+    tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)  -- đóng màn kết quả
+    sleepMs(700)
+    dismissStreak = 0
+  else
+    dismissStreak = dismissStreak + 1
+    sleepMs(500)
+    if dismissStreak > 8 then
+      notify("Khong quang duoc lau -> DUNG. Kiem tra toa do START / mau gauge teal.")
+      running = false
+    end
   end
-  tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
-  sleepMs(800)
   return STATE.CAST
 end
 
