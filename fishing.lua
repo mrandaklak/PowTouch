@@ -43,12 +43,14 @@ local ANCH = {
   resultBtn   = { x = 660, y = 1755, color = 0x016A9C, tol = 40 }, -- dãy nút xanh đáy = ĐANG ở màn kết quả
 }
 
--- Cơ chế giữ–nhả tension
-local TEN = { armPct = 78, rearmDrop = 8, releaseMs = 90, minHoldMs = 70, hookedPct = 6 }
+-- Cơ chế GHIM SÁT VẠCH: giữ tension trong dải [armPct-rearmDrop, armPct].
+--   armPct=vạch nhả, rearmDrop=dải hẹp bên dưới để giữ lại. Dải nhỏ = ghim sát hơn.
+--   (releaseMs/minHoldMs không còn dùng ở chế độ ghim liên tục — giữ lại tham khảo.)
+local TEN = { armPct = 78, rearmDrop = 3, releaseMs = 90, minHoldMs = 70, hookedPct = 6 }
 
 -- Thời gian (ms)
 local TIME = {
-  loopSleep = 40, tapDown = 30, reelPoll = 30,
+  loopSleep = 40, tapDown = 30, reelPoll = 10,
   castGaugeTimeout = 2500, perfectMax = 3000,
   afterCastWaitMax = 18000, fightTimeout = 60000, betweenFish = 1200,
 }
@@ -383,14 +385,18 @@ local function fightFish()
       hold(); releaseAt=0
     end
 
+    -- GHIM SÁT VẠCH ("chạm vạch liên tục"): mỗi vòng phản ứng ngay —
+    --   tension >= vạch      -> NHẢ (tay lên) cho tụt tí
+    --   tension <= vạch-band -> GIỮ (tay xuống) đẩy lên lại
+    --   ở giữa               -> giữ nguyên (hysteresis chống rung)
+    -- Vòng ~30ms nên đây là nhấp giữ/nhả liên tục ghim tension ngay vạch.
     if not hooked then
       hold()
-    elseif holding then
-      if ok and pct>=TEN.armPct and (elapsed-holdSince)>=TEN.minHoldMs then
-        rel(); releaseAt = elapsed + TEN.releaseMs
-      end
+    elseif ok then
+      if pct >= TEN.armPct then rel()
+      elseif pct <= TEN.armPct - TEN.rearmDrop then hold() end
     else
-      if elapsed>=releaseAt and (not ok or pct<=TEN.armPct-TEN.rearmDrop) then hold() end
+      hold()  -- mất đọc -> giữ để khỏi tụt
     end
 
     sleepMs(TIME.reelPoll); elapsed = elapsed + TIME.reelPoll
