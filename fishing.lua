@@ -19,25 +19,27 @@ local RUN = {
 
 local BASE_W, BASE_H = 1080, 1920   -- độ phân giải mà toạ độ dưới đây canh theo
 
--- Toạ độ nút / vùng bấm (cần hiệu chỉnh)
+-- Toạ độ nút / vùng bấm — ĐO TỪ VIDEO MÀN HÌNH THẬT (1080x1920, iPhone Plus).
 local COORDS = {
-  startButton   = { x = 540,  y = 1720 }, -- nút START (quăng cần)
-  castTapPoint  = { x = 540,  y = 1720 }, -- điểm tap để CHỐT lực
-  reelButton    = { x = 540,  y = 1660 }, -- nút reel/orb (giữ để kéo cá)
+  startButton   = { x = 540,  y = 1575 }, -- nút START (quăng cần)
+  castTapPoint  = { x = 540,  y = 1575 }, -- cùng nút START, hiện "TAP" để chốt lực
+  reelButton    = { x = 540,  y = 1590 }, -- nút reel/orb (giữ để kéo cá)
   innerPowerSwipe = { from = { x = 540, y = 1500 }, to = { x = 540, y = 1050 }, durationMs = 160 },
-  confirmPoint  = { x = 540,  y = 1780 }, -- điểm đóng popup phần thưởng
+  confirmPoint  = { x = 55,   y = 120  }, -- mũi tên "<" quay lại (đóng màn kết quả)
 }
 
--- Thanh lực (tension): x0=0%, x1=100%(vạch đứt), y=hàng giữa, probes=số điểm đọc/1 getColors
-local TBAR = { x0 = 250, x1 = 830, y = 250, probes = 28, fillMinR = 150, fillRB = 40 }
+-- Thanh lực (tension): NGANG ở trên cùng. x0=0%, x1=100%(vạch "HIGH"/đứt), y=hàng bar.
+-- Fill đỏ/cam đo thật ~0xFE6559..0xF99F56 (R 249-254) -> fillMinR=150, fillRB=40 khớp.
+-- x1=1000: dừng TRƯỚC chữ "HIGH" đỏ (x~1020-1040) kẻo bị tính nhầm là fill -> luôn 100%.
+local TBAR = { x0 = 315, x1 = 1000, y = 115, probes = 30, fillMinR = 150, fillRB = 40 }
 
--- Anchor màu: { x, y, color(0xRRGGBB), tol }
+-- Anchor màu: { x, y, color(0xRRGGBB), tol } — màu đo thật từ video.
 local ANCH = {
-  ready           = { x = 540, y = 1720, color = 0x39C46B, tol = 26 }, -- màn sẵn sàng (START xanh)
-  gaugeTarget     = { x = 540, y = 1500, color = 0x27D3C4, tol = 34 }, -- ô đích teal (gauge đang hiện)
-  castPerfect     = { x = 540, y = 1500, color = 0xFFD200, tol = 30 }, -- kim vàng đè ô đích
-  innerPowerReady = { x = 300, y = 300,  color = 0x00E0FF, tol = 34 }, -- thanh nội lực đầy
-  rewardScreen    = { x = 540, y = 400,  color = 0xFFFFFF, tol = 24 }, -- màn phần thưởng
+  ready       = { x = 515, y = 1558, color = 0x33ABC5, tol = 45 }, -- mặt xanh nút START
+  gaugeTarget = { x = 535, y = 1180, color = 0x5E9999, tol = 42 }, -- vùng teal vòng cung (gauge hiện)
+  castPerfect = { x = 550, y = 1180, color = 0xF2D515, tol = 60 }, -- kim VÀNG về tâm = perfect
+  rewardScreen= { x = 540, y = 1130, color = 0x000000, tol = 12 }, -- (phụ) — chủ yếu dựa vào "mất tension"
+  innerPowerReady = { x = 915, y = 1620, color = 0x00E0FF, tol = 34 }, -- nút "Nhiệt Huyết" (đang TẮT tính năng)
 }
 
 -- Cơ chế giữ–nhả tension
@@ -50,7 +52,9 @@ local TIME = {
   afterCastWaitMax = 18000, fightTimeout = 60000, betweenFish = 1200,
 }
 
-local FEAT = { useColorDetection = true, useInnerPower = true, autoConfirmReward = true, verboseLog = true }
+-- useInnerPower=false: nội lực trong game này là TAP nút "Nhiệt Huyết", chưa có màu
+-- "sẵn sàng" tin cậy nên tạm tắt để tránh bấm nhầm. Bật lại sau khi canh được.
+local FEAT = { useColorDetection = true, useInnerPower = false, autoConfirmReward = true, verboseLog = true }
 
 -- ==========================================================================
 -- BACKEND (AutoTouch chính; XXTouch dự phòng)
@@ -368,10 +372,12 @@ local function finish()
   catches = catches + 1
   notify(string.format("Cau xong! Tong: %d con", catches))
   if FEAT.autoConfirmReward then
-    for _=1,5 do
-      tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
-      sleepMs(400)
+    -- KIỂM TRA "sẵn sàng" TRƯỚC khi bấm: nút "<" quay lại nằm cùng chỗ trên cả màn
+    -- kết quả LẪN màn sẵn sàng — nếu bấm khi đã về sẵn sàng sẽ thoát khu câu.
+    for _=1,6 do
       if FEAT.useColorDetection and anchorActive(ANCH.ready) then break end
+      tap(COORDS.confirmPoint.x, COORDS.confirmPoint.y)
+      sleepMs(500)
     end
   end
   if RUN.targetCount>0 and catches>=RUN.targetCount then
