@@ -398,10 +398,31 @@ RUN.targetCount = choice.targetCount
 notify(string.format("=== Ace Fishing === Perfect=%s Muc tieu=%s",
   tostring(RUN.perfectCast), RUN.targetCount==0 and "vo han" or tostring(RUN.targetCount)))
 
+-- ---- DEBUG: đọc màu THẬT tại các điểm để chỉnh anchor cho khớp máy ----------
+local DEBUG = true
+local function hexc(c) if not c then return "nil" end local r,g,b=rgb(c); return string.format("0x%02X%02X%02X (r%d g%d b%d)",r,g,b,r,g,b) end
+local function readAt(x,y) return BE.getColor1(sx(x), sy(y)) end
+if DEBUG then
+  local rw,rh = BE.screenSize()
+  logMsg("[dbg] res="..tostring(rw).."x"..tostring(rh)..string.format(" scale=%.3f", SX))
+  logMsg("[dbg] ready ("..ANCH.ready.x..","..ANCH.ready.y..") = "..hexc(readAt(ANCH.ready.x,ANCH.ready.y)).."  ky vong 0x33ABC5")
+  logMsg("[dbg] start ("..COORDS.startButton.x..","..COORDS.startButton.y..") = "..hexc(readAt(COORDS.startButton.x,COORDS.startButton.y)))
+  logMsg("[dbg] gauge ("..ANCH.gaugeTarget.x..","..ANCH.gaugeTarget.y..") = "..hexc(readAt(ANCH.gaugeTarget.x,ANCH.gaugeTarget.y)))
+  local p,ok = measureTensionPct(TBAR)
+  logMsg(string.format("[dbg] tension = %.1f%%  ok=%s", p, tostring(ok)))
+end
+local dbgReadyAt = 0
+
 local state = STATE.READY
 while running do
   if state==STATE.READY then
-    if FEAT.useColorDetection and not anchorActive(ANCH.ready) then sleepMs(TIME.loopSleep)
+    if FEAT.useColorDetection and not anchorActive(ANCH.ready) then
+      if DEBUG then dbgReadyAt = dbgReadyAt + TIME.loopSleep
+        if dbgReadyAt >= 1500 then dbgReadyAt = 0
+          logMsg("[dbg] READY cho... mau tai ("..ANCH.ready.x..","..ANCH.ready.y..") = "..hexc(readAt(ANCH.ready.x,ANCH.ready.y)))
+        end
+      end
+      sleepMs(TIME.loopSleep)
     else state=STATE.CAST end
   elseif state==STATE.CAST   then state=doCast()
   elseif state==STATE.WAIT   then state=waitForBite()
