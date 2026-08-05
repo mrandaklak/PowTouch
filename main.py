@@ -334,7 +334,7 @@ def calib():
         "START": P_START, "REEL": P_REEL,
         "GAUGE_TEAL": GAUGE_TEAL, "NEEDLE": NEEDLE,
         "T_x0": (T_X0, T_Y), "T_mark": (int(mark_x()), T_Y),
-        "T_x1": (T_X1, T_Y), "T_low": (int(low_x()), T_Y),
+        "T_x1": (T_X1, T_Y), "T_low": (int(bar_x(LOW_PCT)), T_Y),
     }
     print("=== CALIB (mau tai cac diem) ===")
     for name, (px, py) in pts.items():
