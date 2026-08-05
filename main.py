@@ -43,24 +43,22 @@ T_X0, T_X1, T_Y = 315, 1000, 115
 GAUGE_TEAL = (535, 1180)
 NEEDLE     = (550, 1180)
 
-# ---- Nội lực (vuốt LÊN) + Giật cần (vuốt TRÁI/PHẢI) khi hiện mũi tên teal ----
-USE_POWER = True   # nội lực: mũi tên LÊN
-USE_JERK  = True   # giật cần: mũi tên TRÁI/PHẢI
-SWIPE_MS  = 150
+# ---- Nội lực (vuốt LÊN, mũi tên teal) + Giật cần (vuốt TRÁI/PHẢI, chevron TRẮNG) ----
+USE_POWER = True   # nội lực: mũi tên teal chỉ LÊN
+USE_JERK  = True   # giật cần: chevron trắng « / »
+SWIPE_MS  = 140
 
-# Các điểm dò mũi tên (hệ 1080). Mũi tên hiện ở giữa màn ~y950.
-#   UP: sáng teal ở phía TRÊN tâm | LEFT: sáng ở BÊN TRÁI | RIGHT: sáng ở BÊN PHẢI
-# ⚠️ Toạ độ LEFT/RIGHT là ƯỚC LƯỢNG (video chưa có mũi tên ngang) — CẦN canh bằng
-#    log [dbg] arrow rồi chỉnh cho khớp.
-ARROW_UP    = (540, 820)
-ARROW_LEFT  = (380, 950)
-ARROW_MID   = (540, 950)
-ARROW_RIGHT = (700, 950)
+ARROW_UP = (540, 950)   # mũi tên "P" teal chỉ LÊN (nội lực)
+
+# Chevron TRẮNG ở giữa màn ~y870 (đo thật). « (trái): trắng dồn BÊN TRÁI;
+# » (phải): trắng dồn BÊN PHẢI. So 2 dải để biết hướng.
+CHEV_LEFT  = [(470, 850), (470, 890)]   # trắng khi « (vuốt trái)
+CHEV_RIGHT = [(580, 850), (580, 890)]   # trắng khi » (vuốt phải)
 
 # Cú vuốt tương ứng (from -> to)
 SWIPE_UP_FROM,    SWIPE_UP_TO    = (540, 1440), (540, 880)
-SWIPE_LEFT_FROM,  SWIPE_LEFT_TO  = (640, 1250), (200, 1250)
-SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO = (440, 1250), (880, 1250)
+SWIPE_LEFT_FROM,  SWIPE_LEFT_TO  = (640, 900), (240, 900)
+SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO = (440, 900), (840, 900)
 
 ARM_PCT, LOW_PCT = 99, 10
 LOST_SEC, NOFISH_SEC, FIGHT_MAX = 1.2, 9.0, 60.0
@@ -162,12 +160,19 @@ def is_yellow(px, py):
     return r > 190 and g > 150 and b < 95
 
 def arrow_teal(px, py):
-    """Điểm sáng teal của mũi tên (nội lực/giật cần). Nền nước tối (~74,81,88);
-    khi có mũi tên điểm này sáng teal (~135,176,180)."""
+    """Điểm sáng teal của mũi tên NỘI LỰC (chỉ LÊN). Nền nước tối; mũi tên teal
+    (~135,176,180)."""
     c = pick(px, py)
     if not c: return False
     r, g, b = c
     return b > 150 and (b - r) > 25 and g > 140
+
+def is_white(px, py):
+    """Điểm TRẮNG của chevron giật cần (« / »)."""
+    c = pick(px, py)
+    if not c: return False
+    r, g, b = c
+    return r > 195 and g > 195 and b > 195 and (max(r, g, b) - min(r, g, b)) < 30
 
 # ==========================================================================
 # CHẠM / GIỮ - NHẢ
@@ -255,6 +260,7 @@ def fight():
     hooked = False
     last_seen = time.time()
     last_power = 0.0
+    last_arrow = 0.0
     t0 = time.time()
 
     while time.time() - t0 < FIGHT_MAX:
@@ -268,33 +274,29 @@ def fight():
         if (not hooked) and (time.time() - t0) > NOFISH_SEC:
             release(); print("[fight] khong dinh ca"); return True
 
-        # MŨI TÊN: nội lực (LÊN) / giật cần (TRÁI/PHẢI). Nhả tay -> vuốt -> kéo tiếp.
-        if hooked and (time.time() - last_power) > 0.6:
-            up = arrow_teal(*ARROW_UP)
-            lf = arrow_teal(*ARROW_LEFT)
-            rt = arrow_teal(*ARROW_RIGHT)
-            mid = arrow_teal(*ARROW_MID)
-            if up or lf or rt or mid:
-                if DEBUG:
-                    print("[dbg] arrow UP=%s L=%s M=%s R=%s | up%s lf%s mid%s rt%s" % (
-                        up, lf, rt, mid, pick(*ARROW_UP), pick(*ARROW_LEFT),
-                        pick(*ARROW_MID), pick(*ARROW_RIGHT)))
-                direction = None
-                if USE_POWER and up:               direction = "up"
-                elif USE_JERK and lf and not rt:   direction = "left"
-                elif USE_JERK and rt and not lf:   direction = "right"
-                elif USE_POWER and mid:            direction = "up"   # fallback: có mũi tên giữa
-                if direction:
-                    release()
-                    if direction == "up":
-                        print("[fight] NOI LUC -> vuot LEN"); swipe(SWIPE_UP_FROM, SWIPE_UP_TO)
-                    elif direction == "left":
-                        print("[fight] GIAT can -> vuot TRAI"); swipe(SWIPE_LEFT_FROM, SWIPE_LEFT_TO)
-                    else:
-                        print("[fight] GIAT can -> vuot PHAI"); swipe(SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO)
-                    last_power = time.time()
-                    time.sleep(0.08)
-                    continue
+        # MŨI TÊN (throttle ~50ms để không làm chậm vòng ghim vạch):
+        #   nội lực = teal chỉ LÊN | giật cần = chevron TRẮNG « (trái) / » (phải).
+        if hooked and (time.time() - last_arrow) > 0.05 and (time.time() - last_power) > 0.5:
+            last_arrow = time.time()
+            up = USE_POWER and arrow_teal(*ARROW_UP)
+            lw = sum(1 for p in CHEV_LEFT  if is_white(*p)) if USE_JERK else 0
+            rw = sum(1 for p in CHEV_RIGHT if is_white(*p)) if USE_JERK else 0
+            direction = None
+            if up:                    direction = "up"
+            elif lw >= 1 and rw == 0: direction = "left"
+            elif rw >= 1 and lw == 0: direction = "right"
+            if direction:
+                if DEBUG: print("[dbg] arrow=%s up=%s lw=%d rw=%d" % (direction, up, lw, rw))
+                release()
+                if direction == "up":
+                    print("[fight] NOI LUC -> vuot LEN"); swipe(SWIPE_UP_FROM, SWIPE_UP_TO)
+                elif direction == "left":
+                    print("[fight] GIAT can -> vuot TRAI"); swipe(SWIPE_LEFT_FROM, SWIPE_LEFT_TO)
+                else:
+                    print("[fight] GIAT can -> vuot PHAI"); swipe(SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO)
+                last_power = time.time()
+                time.sleep(0.08)
+                continue
 
         # GIỮ LIÊN TỤC khi dưới vạch (1 lần TOUCH_DOWN, KHÔNG rung) -> tension leo
         # tới vạch; chạm vạch -> NHẢ cho tụt. Không dùng keepalive (gây hiểu nhầm vuốt).
