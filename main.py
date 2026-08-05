@@ -59,8 +59,12 @@ REEL_CENTER = P_REEL   # (540, 1590)
 SWIPE_DIST  = 15       # px (hệ 1080): lên / trái / phải từ tâm
 SWIPE_MS    = 80       # vuốt nhanh (flick)
 
+DEBUG = True   # in log [dbg] khi phát hiện mũi tên
+
 ARM_PCT, LOW_PCT = 99, 10
-LOST_SEC, NOFISH_SEC, FIGHT_MAX = 1.2, 9.0, 60.0
+# Điểm dò "CÒN TENSION" dọc thanh (nhiều điểm cho ổn định, tránh đọc trượt 1 pixel).
+PRESENT_PCTS = [12, 25, 40, 55, 70]
+LOST_SEC, NOFISH_SEC, FIGHT_MAX = 2.0, 9.0, 60.0
 GAUGE_WAIT, PERFECT_WAIT, CAST_OFF_WAIT = 2.5, 3.0, 1.5
 
 PICK_SCALE = 1.0   # nếu calib thấy màu SAI hết -> đổi thành giá trị SCALE in ra lúc init
@@ -221,9 +225,18 @@ def hold_keepalive():
         _jit ^= 1
         device.touch(TOUCH_MOVE, 1, X(P_REEL[0]) + _jit, Y(P_REEL[1]))
 
-def mark_x(): return T_X0 + (T_X1 - T_X0) * ARM_PCT / 100.0
-def low_x():  return T_X0 + (T_X1 - T_X0) * LOW_PCT / 100.0
+def bar_x(pct): return T_X0 + (T_X1 - T_X0) * pct / 100.0
+def mark_x(): return bar_x(ARM_PCT)
 def gauge_on(): return is_teal(*GAUGE_TEAL)
+
+# Điểm dò "còn tension" (dựng 1 lần).
+_present_pts = [(bar_x(p), T_Y) for p in PRESENT_PCTS]
+def tension_present():
+    """Còn cá không: đọc nhiều điểm dọc thanh, >=1 điểm là fill -> còn tension."""
+    for (x, y) in _present_pts:
+        if is_fill(x, y):
+            return True
+    return False
 
 # ==========================================================================
 # 1) QUĂNG + CANH PERFECT
@@ -263,7 +276,6 @@ def do_cast():
 def fight():
     print("[fight] bat dau keo")
     mx, my = mark_x(), T_Y
-    lx = low_x()
     hooked = False
     last_seen = time.time()
     last_power = 0.0
@@ -271,8 +283,8 @@ def fight():
     t0 = time.time()
 
     while time.time() - t0 < FIGHT_MAX:
-        at_mark = is_fill(mx, my)              # tension đã chạm vạch (ARM_PCT) chưa
-        present = at_mark or is_fill(lx, my)   # còn tension (còn cá) không
+        at_mark = is_fill(mx, my)          # tension đã chạm vạch (ARM_PCT) chưa
+        present = at_mark or tension_present()  # còn tension (nhiều điểm cho ổn định)
         if present:
             hooked = True; last_seen = time.time()
 
