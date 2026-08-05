@@ -58,16 +58,51 @@ SCALE = 1.0
 _holding = False
 _jit = 0
 
+# --- Bộ phân tích linh hoạt cho API zxtouch (trả về tuple/dict tuỳ bản) ---
+def _isnum(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+def _flatten(x):
+    out = []
+    if isinstance(x, (tuple, list)):
+        for v in x: out.extend(_flatten(v))
+    else:
+        out.append(x)
+    return out
+
+def _parse_size(sz):
+    if isinstance(sz, dict):
+        return float(sz["width"]), float(sz["height"])
+    nums = sorted(float(v) for v in _flatten(sz) if _isnum(v))
+    if len(nums) >= 2:
+        return nums[-2], nums[-1]   # 2 số lớn nhất = width,height (bỏ status/scale)
+    raise ValueError("get_screen_size dinh dang la: " + repr(sz))
+
+def _parse_color(res):
+    if res is None: return None
+    if isinstance(res, dict) and "red" in res:
+        return res["red"], res["green"], res["blue"]
+    if isinstance(res, (tuple, list)):
+        for v in res:
+            if isinstance(v, dict) and "red" in v:
+                return v["red"], v["green"], v["blue"]
+        nums = [v for v in _flatten(res) if _isnum(v)]
+        if len(nums) >= 3:
+            return nums[-3], nums[-2], nums[-1]   # 3 số cuối = r,g,b (bỏ status)
+    return None
+
 def connect():
     global device, SW, SH, SCALE
     device = zxtouch("127.0.0.1")
     _sz = device.get_screen_size()
-    SW = float(_sz["width"]); SH = float(_sz["height"])
+    print("[init] get_screen_size raw =", repr(_sz))
+    w, h = _parse_size(_sz)
+    SW, SH = min(w, h), max(w, h)   # game dọc: width < height
     try:
         SCALE = float(device.get_screen_scale())
     except Exception:
         SCALE = 1.0
-    print("[init] screen size = %sx%s  scale = %s" % (_sz["width"], _sz["height"], SCALE))
+    print("[init] SW=%s SH=%s scale=%s" % (SW, SH, SCALE))
 
 def X(px): return int(round(px / REF_W * SW))
 def Y(py): return int(round(py / REF_H * SH))
@@ -75,11 +110,13 @@ def Y(py): return int(round(py / REF_H * SH))
 # ==========================================================================
 # ĐỌC MÀU
 # ==========================================================================
+_pick_logged = False
 def pick(px, py):
-    ok, c = device.pick_color(int(round(X(px) * PICK_SCALE)), int(round(Y(py) * PICK_SCALE)))
-    if ok:
-        return c["red"], c["green"], c["blue"]
-    return None
+    global _pick_logged
+    res = device.pick_color(int(round(X(px) * PICK_SCALE)), int(round(Y(py) * PICK_SCALE)))
+    if not _pick_logged:
+        print("[init] pick_color raw =", repr(res)); _pick_logged = True
+    return _parse_color(res)
 
 def is_fill(px, py):
     c = pick(px, py)
@@ -214,12 +251,15 @@ def one_cycle():
     fight()
     print("=== xong 1 chu ky ===")
 
+SHOW_CALIB = True   # đặt False khi đã canh xong (bớt log)
+
 def main():
     connect()
     if len(sys.argv) > 1 and sys.argv[1] == "calib":
-        calib()
-    else:
-        one_cycle()
+        calib(); return
+    if SHOW_CALIB:
+        calib()      # in màu 1 lần để đối chiếu/hiệu chỉnh rồi mới câu
+    one_cycle()
 
 if __name__ == "__main__":
     try:
