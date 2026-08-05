@@ -43,6 +43,13 @@ T_X0, T_X1, T_Y = 315, 1000, 115
 GAUGE_TEAL = (535, 1180)
 NEEDLE     = (550, 1180)
 
+# ---- Nội lực (vuốt LÊN khi thanh "P" đầy -> hiện mũi tên) ----
+USE_POWER   = True
+POWER_ARROW = (540, 950)     # tâm mũi tên "P" chỉ LÊN (chỉ hiện khi nội lực đầy)
+SWIPE_UP_FROM = (540, 1440)  # bắt đầu vuốt (ngay trên nút reel)
+SWIPE_UP_TO   = (540, 880)   # kết thúc vuốt (lên trên)
+SWIPE_MS = 150
+
 ARM_PCT, LOW_PCT = 99, 10
 LOST_SEC, NOFISH_SEC, FIGHT_MAX = 1.2, 9.0, 60.0
 GAUGE_WAIT, PERFECT_WAIT, CAST_OFF_WAIT = 2.5, 3.0, 1.5
@@ -142,6 +149,14 @@ def is_yellow(px, py):
     r, g, b = c
     return r > 190 and g > 150 and b < 95
 
+def is_power_arrow():
+    """Mũi tên 'P' teal chỉ LÊN (chỉ hiện khi nội lực đầy). Nền nước lúc thường
+    tối (~74,81,88); khi có mũi tên điểm này sáng teal (~135,176,180)."""
+    c = pick(*POWER_ARROW)
+    if not c: return False
+    r, g, b = c
+    return b > 150 and (b - r) > 25 and g > 140
+
 # ==========================================================================
 # CHẠM / GIỮ - NHẢ
 # ==========================================================================
@@ -150,6 +165,19 @@ def tap(px, py, ms=40):
     device.touch(TOUCH_DOWN, 1, x, y)
     time.sleep(ms / 1000.0)
     device.touch(TOUCH_UP, 1, x, y)
+
+def swipe(p1, p2, ms=SWIPE_MS, steps=10):
+    """Vuốt từ p1 -> p2 (hệ 1080x1920)."""
+    global _holding
+    x1, y1 = X(p1[0]), Y(p1[1])
+    x2, y2 = X(p2[0]), Y(p2[1])
+    device.touch(TOUCH_DOWN, 1, x1, y1)
+    for i in range(1, steps + 1):
+        t = i / float(steps)
+        device.touch(TOUCH_MOVE, 1, int(round(x1 + (x2 - x1) * t)), int(round(y1 + (y2 - y1) * t)))
+        time.sleep(ms / 1000.0 / steps)
+    device.touch(TOUCH_UP, 1, x2, y2)
+    _holding = False   # vuốt tự nhả tay
 
 def hold():
     global _holding
@@ -214,6 +242,7 @@ def fight():
     lx = low_x()
     hooked = False
     last_seen = time.time()
+    last_power = 0.0
     t0 = time.time()
 
     while time.time() - t0 < FIGHT_MAX:
@@ -226,6 +255,15 @@ def fight():
             release(); print("[fight] mat tension -> ca da len"); return True
         if (not hooked) and (time.time() - t0) > NOFISH_SEC:
             release(); print("[fight] khong dinh ca"); return True
+
+        # NỘI LỰC: thấy mũi tên "P" chỉ LÊN -> nhả tay, VUỐT LÊN, rồi kéo tiếp.
+        if USE_POWER and hooked and (time.time() - last_power) > 0.8 and is_power_arrow():
+            release()
+            print("[fight] NOI LUC -> vuot LEN")
+            swipe(SWIPE_UP_FROM, SWIPE_UP_TO)
+            last_power = time.time()
+            time.sleep(0.08)
+            continue
 
         # GIỮ LIÊN TỤC khi dưới vạch (1 lần TOUCH_DOWN, KHÔNG rung) -> tension leo
         # tới vạch; chạm vạch -> NHẢ cho tụt. Không dùng keepalive (gây hiểu nhầm vuốt).
