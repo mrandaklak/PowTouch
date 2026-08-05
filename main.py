@@ -59,8 +59,9 @@ _holding = False
 _jit = 0
 
 # --- Bộ phân tích linh hoạt cho API zxtouch (trả về tuple/dict tuỳ bản) ---
-def _isnum(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+def _tonum(v):
+    try: return float(v)          # nhận cả chuỗi "1242.000000"
+    except Exception: return None
 
 def _flatten(x):
     out = []
@@ -70,25 +71,30 @@ def _flatten(x):
         out.append(x)
     return out
 
+def _find_dict(x):
+    if isinstance(x, dict): return x
+    if isinstance(x, (tuple, list)):
+        for v in x:
+            d = _find_dict(v)
+            if d is not None: return d
+    return None
+
 def _parse_size(sz):
-    if isinstance(sz, dict):
-        return float(sz["width"]), float(sz["height"])
-    nums = sorted(float(v) for v in _flatten(sz) if _isnum(v))
+    d = _find_dict(sz)
+    if d is not None and "width" in d:
+        return float(d["width"]), float(d["height"])
+    nums = sorted(n for n in (_tonum(v) for v in _flatten(sz)) if n is not None)
     if len(nums) >= 2:
-        return nums[-2], nums[-1]   # 2 số lớn nhất = width,height (bỏ status/scale)
+        return nums[-2], nums[-1]
     raise ValueError("get_screen_size dinh dang la: " + repr(sz))
 
 def _parse_color(res):
-    if res is None: return None
-    if isinstance(res, dict) and "red" in res:
-        return res["red"], res["green"], res["blue"]
-    if isinstance(res, (tuple, list)):
-        for v in res:
-            if isinstance(v, dict) and "red" in v:
-                return v["red"], v["green"], v["blue"]
-        nums = [v for v in _flatten(res) if _isnum(v)]
-        if len(nums) >= 3:
-            return nums[-3], nums[-2], nums[-1]   # 3 số cuối = r,g,b (bỏ status)
+    d = _find_dict(res)
+    if d is not None and "red" in d:
+        return float(d["red"]), float(d["green"]), float(d["blue"])
+    nums = [n for n in (_tonum(v) for v in _flatten(res)) if n is not None]
+    if len(nums) >= 3:
+        return nums[-3], nums[-2], nums[-1]
     return None
 
 def connect():
