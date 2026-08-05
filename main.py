@@ -49,10 +49,14 @@ USE_JERK  = True   # giật cần: chevron trắng « / »
 
 ARROW_UP = (540, 950)   # mũi tên "P" teal chỉ LÊN (nội lực)
 
-# Chevron TRẮNG ở giữa màn ~y870 (đo thật). « (trái): trắng dồn BÊN TRÁI;
-# » (phải): trắng dồn BÊN PHẢI. So 2 dải để biết hướng.
-CHEV_LEFT  = [(470, 850), (470, 890)]   # trắng khi « (vuốt trái)
-CHEV_RIGHT = [(580, 850), (580, 890)]   # trắng khi » (vuốt phải)
+# Chevron ~y870. Check theo HÌNH DẠNG (đo thật từ frame): mỗi hướng có điểm phải
+# TRẮNG (nét chevron) + điểm phải TỐI (viền/bóng). Nước xanh trượt cả 2; vệt trắng
+# trượt điểm tối -> chỉ đúng « hoặc » mới khớp hết -> hết nhiễu nền.
+CHEV_MID     = (524, 863)   # tâm (trắng cho cả « lẫn ») — tiền lọc nhanh
+CHEV_LEFT_W  = [(488, 831), (476, 863), (488, 887), (524, 863), (512, 895)]  # TRẮNG khi «
+CHEV_LEFT_K  = [(584, 871), (596, 863), (452, 831)]                          # TỐI khi «
+CHEV_RIGHT_W = [(560, 831), (572, 863), (560, 887), (524, 863), (548, 895)]  # TRẮNG khi »
+CHEV_RIGHT_K = [(476, 863), (464, 871), (608, 831)]                          # TỐI khi »
 
 # MỌI cú vuốt (lên/trái/phải) đều XUẤT PHÁT TỪ TÂM nút reel, đi 1 đoạn ngắn.
 REEL_CENTER = P_REEL   # (540, 1590)
@@ -171,11 +175,33 @@ def arrow_teal(px, py):
     return b > 150 and (b - r) > 25 and g > 140
 
 def is_white(px, py):
-    """Điểm TRẮNG của chevron giật cần (« / »)."""
+    """Điểm TRẮNG (nét chevron)."""
     c = pick(px, py)
     if not c: return False
     r, g, b = c
-    return r > 195 and g > 195 and b > 195 and (max(r, g, b) - min(r, g, b)) < 30
+    return r > 180 and g > 180 and b > 180 and (max(r, g, b) - min(r, g, b)) < 45
+
+def is_dark(px, py):
+    """Điểm TỐI (viền/bóng chevron). Nước xanh (~60,110,160) KHÔNG tối -> loại."""
+    c = pick(px, py)
+    if not c: return False
+    r, g, b = c
+    return max(r, g, b) < 110
+
+def chevron_dir():
+    """Trả 'left'/'right'/None theo template hình dạng « / ». Tiền lọc tâm trắng
+    rồi khớp đủ nét TRẮNG + viền TỐI (cho phép trượt nhẹ)."""
+    if not is_white(*CHEV_MID):
+        return None
+    lw = sum(1 for p in CHEV_LEFT_W  if is_white(*p))
+    rw = sum(1 for p in CHEV_RIGHT_W if is_white(*p))
+    lk = sum(1 for p in CHEV_LEFT_K  if is_dark(*p))
+    rk = sum(1 for p in CHEV_RIGHT_K if is_dark(*p))
+    left_ok  = lw >= 4 and lk >= 2
+    right_ok = rw >= 4 and rk >= 2
+    if left_ok and not right_ok: return "left"
+    if right_ok and not left_ok: return "right"
+    return None
 
 # ==========================================================================
 # CHẠM / GIỮ - NHẢ
@@ -297,15 +323,13 @@ def fight():
         #   nội lực = teal chỉ LÊN | giật cần = chevron TRẮNG « (trái) / » (phải).
         if hooked and (time.time() - last_arrow) > 0.05 and (time.time() - last_power) > 0.5:
             last_arrow = time.time()
-            up = USE_POWER and arrow_teal(*ARROW_UP)
-            lw = sum(1 for p in CHEV_LEFT  if is_white(*p)) if USE_JERK else 0
-            rw = sum(1 for p in CHEV_RIGHT if is_white(*p)) if USE_JERK else 0
             direction = None
-            if up:                    direction = "up"
-            elif lw >= 1 and rw == 0: direction = "left"
-            elif rw >= 1 and lw == 0: direction = "right"
+            if USE_POWER and arrow_teal(*ARROW_UP):
+                direction = "up"
+            elif USE_JERK:
+                direction = chevron_dir()   # 'left'/'right'/None (khớp template hình dạng)
             if direction:
-                if DEBUG: print("[dbg] arrow=%s up=%s lw=%d rw=%d" % (direction, up, lw, rw))
+                if DEBUG: print("[dbg] arrow=%s" % direction)
                 release()
                 if direction == "up":     print("[fight] NOI LUC -> vuot LEN")
                 elif direction == "left": print("[fight] GIAT can -> vuot TRAI")
