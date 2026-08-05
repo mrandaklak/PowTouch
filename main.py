@@ -46,7 +46,6 @@ NEEDLE     = (550, 1180)
 # ---- Nội lực (vuốt LÊN, mũi tên teal) + Giật cần (vuốt TRÁI/PHẢI, chevron TRẮNG) ----
 USE_POWER = True   # nội lực: mũi tên teal chỉ LÊN
 USE_JERK  = True   # giật cần: chevron trắng « / »
-SWIPE_MS  = 140
 
 ARROW_UP = (540, 950)   # mũi tên "P" teal chỉ LÊN (nội lực)
 
@@ -55,10 +54,10 @@ ARROW_UP = (540, 950)   # mũi tên "P" teal chỉ LÊN (nội lực)
 CHEV_LEFT  = [(470, 850), (470, 890)]   # trắng khi « (vuốt trái)
 CHEV_RIGHT = [(580, 850), (580, 890)]   # trắng khi » (vuốt phải)
 
-# Cú vuốt tương ứng (from -> to)
-SWIPE_UP_FROM,    SWIPE_UP_TO    = (540, 1440), (540, 880)
-SWIPE_LEFT_FROM,  SWIPE_LEFT_TO  = (640, 900), (240, 900)
-SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO = (440, 900), (840, 900)
+# MỌI cú vuốt (lên/trái/phải) đều XUẤT PHÁT TỪ TÂM nút reel, đi 1 đoạn ngắn.
+REEL_CENTER = P_REEL   # (540, 1590)
+SWIPE_DIST  = 15       # px (hệ 1080): lên / trái / phải từ tâm
+SWIPE_MS    = 80       # vuốt nhanh (flick)
 
 ARM_PCT, LOW_PCT = 99, 10
 LOST_SEC, NOFISH_SEC, FIGHT_MAX = 1.2, 9.0, 60.0
@@ -196,6 +195,14 @@ def swipe(p1, p2, ms=SWIPE_MS, steps=10):
     device.touch(TOUCH_UP, 1, x2, y2)
     _holding = False   # vuốt tự nhả tay
 
+def flick(direction):
+    """Vuốt ngắn TỪ TÂM nút reel theo hướng (SWIPE_DIST px)."""
+    cx, cy = REEL_CENTER
+    d = SWIPE_DIST
+    if direction == "up":      swipe((cx, cy), (cx, cy - d))
+    elif direction == "left":  swipe((cx, cy), (cx - d, cy))
+    elif direction == "right": swipe((cx, cy), (cx + d, cy))
+
 def hold():
     global _holding
     if not _holding:
@@ -288,12 +295,10 @@ def fight():
             if direction:
                 if DEBUG: print("[dbg] arrow=%s up=%s lw=%d rw=%d" % (direction, up, lw, rw))
                 release()
-                if direction == "up":
-                    print("[fight] NOI LUC -> vuot LEN"); swipe(SWIPE_UP_FROM, SWIPE_UP_TO)
-                elif direction == "left":
-                    print("[fight] GIAT can -> vuot TRAI"); swipe(SWIPE_LEFT_FROM, SWIPE_LEFT_TO)
-                else:
-                    print("[fight] GIAT can -> vuot PHAI"); swipe(SWIPE_RIGHT_FROM, SWIPE_RIGHT_TO)
+                if direction == "up":     print("[fight] NOI LUC -> vuot LEN")
+                elif direction == "left": print("[fight] GIAT can -> vuot TRAI")
+                else:                     print("[fight] GIAT can -> vuot PHAI")
+                flick(direction)   # vuốt ngắn từ tâm nút reel
                 last_power = time.time()
                 time.sleep(0.08)
                 continue
