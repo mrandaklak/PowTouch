@@ -43,7 +43,7 @@ T_X0, T_X1, T_Y = 315, 1000, 115
 GAUGE_TEAL = (535, 1180)
 NEEDLE     = (550, 1180)
 
-ARM_PCT, LOW_PCT = 88, 10
+ARM_PCT, LOW_PCT = 99, 10
 LOST_SEC, NOFISH_SEC, FIGHT_MAX = 1.2, 9.0, 60.0
 GAUGE_WAIT, PERFECT_WAIT, CAST_OFF_WAIT = 2.5, 3.0, 1.5
 
@@ -217,8 +217,8 @@ def fight():
     t0 = time.time()
 
     while time.time() - t0 < FIGHT_MAX:
-        at_mark = is_fill(mx, my)
-        present = at_mark or is_fill(lx, my)
+        at_mark = is_fill(mx, my)              # tension đã chạm vạch (ARM_PCT) chưa
+        present = at_mark or is_fill(lx, my)   # còn tension (còn cá) không
         if present:
             hooked = True; last_seen = time.time()
 
@@ -227,12 +227,14 @@ def fight():
         if (not hooked) and (time.time() - t0) > NOFISH_SEC:
             release(); print("[fight] khong dinh ca"); return True
 
-        if not hooked:   hold()
-        elif at_mark:    release()
-        else:            hold()
+        # GIỮ LIÊN TỤC khi dưới vạch (1 lần TOUCH_DOWN, KHÔNG rung) -> tension leo
+        # tới vạch; chạm vạch -> NHẢ cho tụt. Không dùng keepalive (gây hiểu nhầm vuốt).
+        if at_mark and hooked:
+            release()
+        else:
+            hold()
 
-        hold_keepalive()
-        time.sleep(0.004)
+        time.sleep(0.02)
 
     release(); print("[fight] qua gio"); return True
 
